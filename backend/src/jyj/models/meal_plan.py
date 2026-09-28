@@ -32,7 +32,7 @@ planned_meal_status_enum = Enum(
 
 
 class MealSlot(Base):
-    """A column of the meal calendar (lunch, dinner, ...), ordered by ``position``."""
+    """An optional label for planned meals (lunch, dinner, ...), ordered by ``position``."""
 
     __tablename__ = "meal_slots"
     __table_args__ = (
@@ -50,7 +50,7 @@ Index("uq_meal_slots_name_lower", func.lower(MealSlot.name), unique=True)
 
 
 class PlannedMeal(TimestampMixin, Base):
-    """A recipe placed in a (date, slot) cell; ``position`` orders meals within the cell."""
+    """A recipe placed on a date; ``position`` orders the day's meals, ``slot`` is a label."""
 
     __tablename__ = "planned_meals"
     __table_args__ = (
@@ -59,13 +59,14 @@ class PlannedMeal(TimestampMixin, Base):
         CheckConstraint(
             "(status = 'cooked') = (cooked_at IS NOT NULL)", name="cooked_at_iff_cooked"
         ),
-        Index("ix_planned_meals_date_slot_id", "date", "slot_id"),
+        Index("ix_planned_meals_date_position", "date", "position"),
+        Index("ix_planned_meals_slot_id", "slot_id"),
         Index("ix_planned_meals_recipe_id", "recipe_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     date: Mapped[dt.date] = mapped_column(Date)
-    slot_id: Mapped[int] = mapped_column(ForeignKey("meal_slots.id", ondelete="RESTRICT"))
+    slot_id: Mapped[int | None] = mapped_column(ForeignKey("meal_slots.id", ondelete="SET NULL"))
     recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="RESTRICT"))
     servings: Mapped[int]
     position: Mapped[int] = mapped_column(server_default=text("0"))
@@ -76,5 +77,5 @@ class PlannedMeal(TimestampMixin, Base):
     cooked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
 
-    slot: Mapped[MealSlot] = relationship(lazy="joined", innerjoin=True)
+    slot: Mapped[MealSlot | None] = relationship(lazy="joined")
     recipe: Mapped[Recipe] = relationship(lazy="joined", innerjoin=True)

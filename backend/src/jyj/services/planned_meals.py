@@ -1,13 +1,15 @@
-"""Planned meals: recipes placed in (date, slot) cells of the meal calendar.
+"""Planned meals: recipes placed on the days of the meal calendar.
 
-Within a cell, meals are ordered by a dense 0-based ``position``. Every write to a cell locks
-its slot row first, so concurrent adds and moves into the same slot serialise and positions
-stay compact.
+Each day is one list of meals ordered by a dense 0-based ``position``; the slot is an optional
+label that plays no part in ordering. Every write to a day takes a transaction-scoped advisory
+lock on that date first, so concurrent adds and moves into the same day serialise and
+positions stay compact.
 
 Cooking deducts the recipe (scaled by servings) from stock through the stock ledger; uncooking
 writes 'undo' movements that reverse exactly what that cook applied. Writes to an existing
 meal lock its row first (then slots, then stock items by ingredient id), so cook, uncook,
-edits and deletes of the same meal serialise.
+edits and deletes of the same meal serialise. Lock order: meal row, then days by date, then
+stock items by ingredient id.
 """
 
 import datetime as dt
@@ -18,12 +20,11 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, lazyload
 
 from jyj.models import (
     Ingredient,
-    MealSlot,
     PlannedMeal,
     PlannedMealStatus,
     Recipe,
@@ -41,6 +42,9 @@ from jyj.units import Dimension, Unconvertible, base_unit, convert, get_unit, qu
 
 RANGE_MAX_DAYS = 62
 UPDATABLE_FIELDS = frozenset({"date", "slot_id", "servings", "position", "status"})
+NULLABLE_FIELDS = frozenset({"slot_id"})
+# First key of the two-key advisory lock taken per calendar day; the second is the date ordinal.
+DAY_LOCK_CLASS = 0x6A796A01
 ZERO = Decimal("0.000")
 
 
@@ -81,16 +85,15 @@ def _query():
 
 
 def list_planned_meals(db: Session, start: dt.date, end: dt.date) -> list[PlannedMeal]:
-    """Meals with ``start <= date <= end``, in calendar order (date, slot order, position)."""
+    """Meals with ``start <= date <= end``, in calendar order (date, position)."""
     if end < start:
         raise InvalidError("'to' must not be before 'from'")
     if (end - start).days + 1 > RANGE_MAX_DAYS:
         raise InvalidError(f"the range can span at most {RANGE_MAX_DAYS} days")
     stmt = (
         _query()
-        .join(PlannedMeal.slot)
         .where(PlannedMeal.date.between(start, end))
-        .order_by(PlannedMeal.date, MealSlot.position, MealSlot.id, PlannedMeal.position)
+        .order_by(PlannedMeal.date, PlannedMeal.position, PlannedMeal.id)
     )
     return list(db.scalars(stmt).unique())
 
@@ -111,54 +114,65 @@ def create_planned_meal(
     source: StockSource,
     *,
     date: dt.date,
-    slot_id: int,
     recipe_id: int,
+    slot_id: int | None = None,
     servings: int | None = None,
+    position: int | None = None,
 ) -> PlannedMeal:
-    slot = slots_service.get_slot(db, slot_id, lock=True)
-    if not slot.active:
-        raise InvalidError(f"meal slot {slot.name!r} is inactive", slot_id=slot.id)
+    """Add a meal to ``date``, inserted at ``position`` (appended when omitted or past the end)."""
+    if slot_id is not None:
+        _active_slot(db, slot_id)
     recipe = recipes_service.get_recipe(db, recipe_id)
     if recipe.archived_at is not None:
         raise InvalidError(f"recipe {recipe.name!r} is archived", recipe_id=recipe.id)
-
     date = _clean_date(date)
-    cell = _cell(db, date, slot.id)
+    servings = _clean_servings(recipe.default_servings if servings is None else servings)
+    position = None if position is None else _clean_position(position)
+
+    _lock_days(db, date)
+    day = _day(db, date)
     meal = PlannedMeal(
         date=date,
-        slot_id=slot.id,
+        slot_id=slot_id,
         recipe_id=recipe.id,
-        servings=_clean_servings(recipe.default_servings if servings is None else servings),
-        position=len(cell),
+        servings=servings,
+        position=len(day),
         status=PlannedMealStatus.PLANNED,
         created_by=user.id,
     )
     db.add(meal)
     db.flush()
+    if position is not None and position < len(day):
+        day.insert(position, meal)
+        _renumber(day)
+        db.flush()
     return _reload(db, meal)
 
 
 def update_planned_meal(
     db: Session, user: User, source: StockSource, meal_id: int, changes: Mapping[str, Any]
 ) -> PlannedMeal:
-    """Partial update. Changing date/slot/position moves the meal: it is inserted at
-    ``position`` in the target cell (appended when omitted) and both cells are renumbered."""
+    """Partial update. Changing date/position moves the meal: it is inserted at ``position``
+    in the target day (appended when omitted) and both days are renumbered. ``slot_id`` only
+    relabels the meal; null clears the label."""
     unknown = set(changes) - UPDATABLE_FIELDS
     if unknown:
         raise InvalidError(f"unknown fields: {', '.join(sorted(unknown))}")
-    nulled = sorted(f for f in UPDATABLE_FIELDS & set(changes) if changes[f] is None)
+    nulled = sorted(
+        f for f in (UPDATABLE_FIELDS - NULLABLE_FIELDS) & set(changes) if changes[f] is None
+    )
     if nulled:
         raise InvalidError(f"fields cannot be null: {', '.join(nulled)}")
 
     meal = get_planned_meal(db, meal_id, lock=True)
     target_date = _clean_date(changes["date"]) if "date" in changes else meal.date
-    target_slot_id = changes.get("slot_id", meal.slot_id)
-    moving_cell = (target_date, target_slot_id) != (meal.date, meal.slot_id)
+    position = _clean_position(changes["position"]) if "position" in changes else None
+    moving_day = target_date != meal.date
 
-    for locked_id in sorted({meal.slot_id, target_slot_id}):
-        slot = slots_service.get_slot(db, locked_id, lock=True)
-        if locked_id == target_slot_id and moving_cell and not slot.active:
-            raise InvalidError(f"meal slot {slot.name!r} is inactive", slot_id=slot.id)
+    if "slot_id" in changes and changes["slot_id"] != meal.slot_id:
+        if changes["slot_id"] is not None:
+            _active_slot(db, changes["slot_id"])
+        meal.slot_id = changes["slot_id"]
 
     if "servings" in changes:
         servings = _clean_servings(changes["servings"])
@@ -172,15 +186,14 @@ def update_planned_meal(
     if "status" in changes:
         _set_plain_status(meal, changes["status"])
 
-    if moving_cell or "position" in changes:
-        position = _clean_position(changes["position"]) if "position" in changes else None
-        if moving_cell:
-            _renumber([m for m in _cell(db, meal.date, meal.slot_id) if m.id != meal.id])
-        target = [m for m in _cell(db, target_date, target_slot_id) if m.id != meal.id]
+    if moving_day or position is not None:
+        _lock_days(db, meal.date, target_date)
+        if moving_day:
+            _renumber([m for m in _day(db, meal.date) if m.id != meal.id])
+        target = [m for m in _day(db, target_date) if m.id != meal.id]
         index = len(target) if position is None else min(position, len(target))
         target.insert(index, meal)
         meal.date = target_date
-        meal.slot_id = target_slot_id
         _renumber(target)
 
     db.flush()
@@ -189,15 +202,15 @@ def update_planned_meal(
 
 def delete_planned_meal(db: Session, user: User, source: StockSource, meal_id: int) -> None:
     meal = get_planned_meal(db, meal_id, lock=True)
-    slots_service.get_slot(db, meal.slot_id, lock=True)
     if meal.status is PlannedMealStatus.COOKED:
         raise ConflictError(
             "cooked meals cannot be deleted; uncook it first", status_value=meal.status.value
         )
-    date, slot_id = meal.date, meal.slot_id
+    date = meal.date
+    _lock_days(db, date)
     db.delete(meal)
     db.flush()
-    _renumber(_cell(db, date, slot_id))
+    _renumber(_day(db, date))
     db.flush()
 
 
@@ -351,12 +364,22 @@ def _set_plain_status(meal: PlannedMeal, value: Any) -> None:
     meal.status = status
 
 
-def _cell(db: Session, date: dt.date, slot_id: int) -> list[PlannedMeal]:
-    stmt = (
-        _query()
-        .where(PlannedMeal.date == date, PlannedMeal.slot_id == slot_id)
-        .order_by(PlannedMeal.position, PlannedMeal.id)
-    )
+def _active_slot(db: Session, slot_id: int) -> None:
+    slot = slots_service.get_slot(db, slot_id)
+    if not slot.active:
+        raise InvalidError(f"meal slot {slot.name!r} is inactive", slot_id=slot.id)
+
+
+def _lock_days(db: Session, *dates: dt.date) -> None:
+    for date in sorted(set(dates)):
+        db.execute(
+            text("SELECT pg_advisory_xact_lock(:cls, :day)"),
+            {"cls": DAY_LOCK_CLASS, "day": date.toordinal()},
+        )
+
+
+def _day(db: Session, date: dt.date) -> list[PlannedMeal]:
+    stmt = _query().where(PlannedMeal.date == date).order_by(PlannedMeal.position, PlannedMeal.id)
     return list(db.scalars(stmt).unique())
 
 

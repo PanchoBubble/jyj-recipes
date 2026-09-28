@@ -1,13 +1,13 @@
-"""Meal slots: the configurable, ordered columns of the meal calendar."""
+"""Meal slots: configurable, ordered labels for planned meals (lunch, dinner, ...)."""
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from jyj.models import MealSlot, PlannedMeal, StockSource, User
+from jyj.models import MealSlot, StockSource, User
 from jyj.services.errors import ConflictError, InvalidError, NotFoundError
 
 NAME_MAX = 50
@@ -65,12 +65,8 @@ def update_slot(
 
 
 def delete_slot(db: Session, user: User, source: StockSource, slot_id: int) -> None:
+    """Delete the slot; meals labelled with it stay on the calendar without a label."""
     slot = get_slot(db, slot_id, lock=True)
-    if db.scalar(select(exists().where(PlannedMeal.slot_id == slot.id))):
-        raise ConflictError(
-            "meal slot has planned meals and cannot be deleted; deactivate it instead",
-            references=["planned_meals"],
-        )
     db.delete(slot)
     db.flush()
     _renumber(list_slots(db))

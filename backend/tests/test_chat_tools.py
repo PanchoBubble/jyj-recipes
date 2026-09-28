@@ -343,6 +343,7 @@ def test_output_schema_splits_reads_and_writes(registry: Registry) -> None:
         "set_stock",
         "plan_meal",
         "move_meal",
+        "set_meal_slot",
         "set_servings",
         "remove_meal",
         "mark_cooked",

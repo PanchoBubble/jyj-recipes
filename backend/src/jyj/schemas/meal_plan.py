@@ -50,21 +50,28 @@ class PlannedMealCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     date: dt.date
-    slot_id: int
     recipe_id: int
+    # Optional label; ordering is by position within the day.
+    slot_id: int | None = None
     # Defaults to the recipe's default_servings.
     servings: Servings | None = None
+    # Index within the day; omitted or past the end appends.
+    position: Position | None = None
 
 
 class PlannedMealUpdate(BaseModel):
-    """Partial update; date/slot_id/position move the meal (drag and drop)."""
+    """Partial update; date/position move the meal (drag and drop).
+
+    Only fields present in the body change: an absent ``slot_id`` keeps the label, an explicit
+    null clears it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     date: dt.date | None = None
     slot_id: int | None = None
     servings: Servings | None = None
-    # Index within the target cell; past the end appends.
+    # Index within the target day; past the end appends.
     position: Position | None = None
     # 'cooked' only via POST /{id}/cook, which also updates stock.
     status: Literal["planned", "skipped"] | None = None
@@ -82,7 +89,7 @@ class PlannedRecipeOut(BaseModel):
 class PlannedMealOut(BaseModel):
     id: int
     date: dt.date
-    slot_id: int
+    slot_id: int | None
     recipe_id: int
     servings: int
     position: int
@@ -93,7 +100,7 @@ class PlannedMealOut(BaseModel):
     created_at: dt.datetime
     updated_at: dt.datetime
     recipe: PlannedRecipeOut
-    slot: MealSlotOut
+    slot: MealSlotOut | None
 
     @classmethod
     def build(cls, meal: PlannedMeal) -> Self:
@@ -119,7 +126,7 @@ class PlannedMealOut(BaseModel):
                 default_servings=recipe.default_servings,
                 archived_at=recipe.archived_at,
             ),
-            slot=MealSlotOut.model_validate(meal.slot),
+            slot=None if meal.slot is None else MealSlotOut.model_validate(meal.slot),
         )
 
 

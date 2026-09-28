@@ -84,10 +84,11 @@ recipe_ingredients id, recipe_id → recipes (cascade), ingredient_id → ingred
                  amount_per_person numeric, unit_code → units, note, position
                  CHECK amount_per_person > 0 unless unit dimension = 'none' ("to taste")
 
-meal_slots       id, name, position, active            (seed: lunch, dinner, tea)
-planned_meals    id, date, slot_id → meal_slots, recipe_id → recipes, servings int > 0, position,
-                 status ('planned'|'cooked'|'skipped'), cooked_at, cooked_by, created_by, timestamps
-                 INDEX (date, slot_id)
+meal_slots       id, name, position, active            (seed: lunch, dinner, tea; optional labels)
+planned_meals    id, date, slot_id? → meal_slots (ON DELETE SET NULL), recipe_id → recipes,
+                 servings int > 0, position (dense per date), status ('planned'|'cooked'|'skipped'),
+                 cooked_at, cooked_by, created_by, timestamps
+                 INDEX (date, position), INDEX (slot_id)
 
 stock_items      ingredient_id PK → ingredients, quantity_base numeric ≥ 0, updated_at
 stock_movements  id, ingredient_id, delta_base numeric, reason ('manual'|'cooked'|'purchased'|'correction'|'undo'),
@@ -132,8 +133,8 @@ GET    /recipes/{id}/scaled?servings=N
 
 GET    /meal-slots            POST /meal-slots       PATCH|DELETE /meal-slots/{id}   PUT /meal-slots/order
 GET    /planned-meals?from=&to=
-POST   /planned-meals         {date, slot_id, recipe_id, servings}
-PATCH  /planned-meals/{id}    {date?, slot_id?, servings?, position?}   (DnD move)
+POST   /planned-meals         {date, recipe_id, servings?, position?, slot_id?}
+PATCH  /planned-meals/{id}    {date?, position?, servings?, status?, slot_id?}   (DnD move; slot_id null clears)
 DELETE /planned-meals/{id}
 POST   /planned-meals/{id}/cook     → stock movements (idempotent)
 POST   /planned-meals/{id}/uncook   → compensating 'undo' movements

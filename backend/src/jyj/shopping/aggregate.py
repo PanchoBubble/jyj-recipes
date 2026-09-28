@@ -43,9 +43,10 @@ ZERO = Decimal("0.000")
 class MealInput:
     id: int
     date: dt.date
-    slot_id: int
-    slot_name: str
-    slot_position: int
+    slot_id: int | None
+    slot_name: str | None
+    # Order within the day.
+    position: int
     recipe_id: int
     recipe_name: str
     servings: int
@@ -74,8 +75,8 @@ class IngredientInput:
 class MealRef:
     planned_meal_id: int
     date: dt.date
-    slot_id: int
-    slot_name: str
+    slot_id: int | None
+    slot_name: str | None
     recipe_id: int
     recipe_name: str
     servings: int
@@ -311,7 +312,7 @@ def _ref(meal: MealInput) -> MealRef:
 
 
 def _meal_order(meal: MealInput) -> tuple[dt.date, int, int]:
-    return meal.date, meal.slot_position, meal.id
+    return meal.date, meal.position, meal.id
 
 
 def _sort_key(category: str | None, name: str, ingredient_id: int) -> tuple:

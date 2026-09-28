@@ -34,13 +34,13 @@ def load_and_compute(db: Session, start: dt.date, end: dt.date, today: dt.date) 
             PlannedMeal.date,
             PlannedMeal.slot_id,
             MealSlot.name.label("slot_name"),
-            MealSlot.position.label("slot_position"),
+            PlannedMeal.position,
             PlannedMeal.recipe_id,
             Recipe.name.label("recipe_name"),
             PlannedMeal.servings,
             PlannedMeal.status,
         )
-        .join(MealSlot, MealSlot.id == PlannedMeal.slot_id)
+        .outerjoin(MealSlot, MealSlot.id == PlannedMeal.slot_id)
         .join(Recipe, Recipe.id == PlannedMeal.recipe_id)
         .where(
             PlannedMeal.status == PlannedMealStatus.PLANNED,
@@ -54,7 +54,7 @@ def load_and_compute(db: Session, start: dt.date, end: dt.date, today: dt.date) 
             date=r.date,
             slot_id=r.slot_id,
             slot_name=r.slot_name,
-            slot_position=r.slot_position,
+            position=r.position,
             recipe_id=r.recipe_id,
             recipe_name=r.recipe_name,
             servings=r.servings,

@@ -1,8 +1,8 @@
 """Meal calendar tools: thin wrappers over ``jyj.services.planned_meals``."""
 
-from typing import Annotated, Self
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from jyj.chat.tools.common import DateRange, Id, IsoDate, quantity
 from jyj.chat.tools.registry import Tool, ToolContext, ToolRejected
@@ -18,6 +18,7 @@ Slot = Annotated[
     | Annotated[str, Field(min_length=1, max_length=slots_service.NAME_MAX)],
     Field(description="Meal slot name (case-insensitive, e.g. dinner) or id."),
 ]
+Position = Annotated[int, Field(ge=0, le=10_000)]
 
 
 class GetPlanArgs(DateRange):
@@ -28,8 +29,8 @@ class PlanMealArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     date: IsoDate
-    slot: Slot
     recipe_id: Id
+    slot: Slot | None = Field(default=None, description="Optional label; null for none.")
     servings: Servings | None = Field(default=None, description="Null uses the recipe default.")
 
 
@@ -37,14 +38,21 @@ class MoveMealArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     meal_id: Id
-    date: IsoDate | None = Field(default=None, description="Null keeps the current date.")
-    slot: Slot | None = Field(default=None, description="Null keeps the current slot.")
+    date: IsoDate = Field(description="Target day; pass the current date to reorder in place.")
+    position: Position | None = Field(
+        default=None,
+        description=(
+            "0-based place in the target day's list; past the end appends. Null appends when "
+            "the day changes and keeps the current place otherwise."
+        ),
+    )
 
-    @model_validator(mode="after")
-    def _somewhere_to_go(self) -> Self:
-        if self.date is None and self.slot is None:
-            raise ValueError("provide a date, a slot or both")
-        return self
+
+class SetMealSlotArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    meal_id: Id
+    slot: Slot | None = Field(description="New label; null removes the label.")
 
 
 class SetServingsArgs(BaseModel):
@@ -64,7 +72,8 @@ def _meal(meal: PlannedMeal) -> dict:
     return {
         "meal_id": meal.id,
         "date": meal.date.isoformat(),
-        "slot": meal.slot.name,
+        "position": meal.position,
+        "slot": None if meal.slot is None else meal.slot.name,
         "recipe_id": meal.recipe_id,
         "recipe": meal.recipe.name,
         "servings": meal.servings,
@@ -119,13 +128,13 @@ def get_plan(ctx: ToolContext, args: GetPlanArgs) -> dict:
 
 
 def plan_meal(ctx: ToolContext, args: PlanMealArgs) -> dict:
-    slot = _resolve_slot(ctx, args.slot)
+    slot = None if args.slot is None else _resolve_slot(ctx, args.slot)
     meal = meals_service.create_planned_meal(
         ctx.db,
         ctx.user,
         ctx.source,
         date=args.date,
-        slot_id=slot.id,
+        slot_id=None if slot is None else slot.id,
         recipe_id=args.recipe_id,
         servings=args.servings,
     )
@@ -133,12 +142,18 @@ def plan_meal(ctx: ToolContext, args: PlanMealArgs) -> dict:
 
 
 def move_meal(ctx: ToolContext, args: MoveMealArgs) -> dict:
-    changes: dict = {}
-    if args.date is not None:
-        changes["date"] = args.date
-    if args.slot is not None:
-        changes["slot_id"] = _resolve_slot(ctx, args.slot).id
+    changes: dict = {"date": args.date}
+    if args.position is not None:
+        changes["position"] = args.position
     meal = meals_service.update_planned_meal(ctx.db, ctx.user, ctx.source, args.meal_id, changes)
+    return _meal(meal)
+
+
+def set_meal_slot(ctx: ToolContext, args: SetMealSlotArgs) -> dict:
+    slot_id = None if args.slot is None else _resolve_slot(ctx, args.slot).id
+    meal = meals_service.update_planned_meal(
+        ctx.db, ctx.user, ctx.source, args.meal_id, {"slot_id": slot_id}
+    )
     return _meal(meal)
 
 
@@ -169,24 +184,37 @@ def uncook_meal(ctx: ToolContext, args: MealIdArgs) -> dict:
 TOOLS = (
     Tool(
         name="get_plan",
-        description="Planned meals between two ISO dates (at most 31 days), in calendar order.",
+        description=(
+            "Planned meals between two ISO dates (at most 31 days), in calendar order: by date, "
+            "then position within the day. slot is an optional label (null when unlabelled)."
+        ),
         args_model=GetPlanArgs,
         kind="read",
         handler=get_plan,
     ),
     Tool(
         name="plan_meal",
-        description="Put a recipe on a date and slot; null servings use the recipe default.",
+        description=(
+            "Add a recipe to the end of a date's meals, optionally labelled with a slot; null "
+            "servings use the recipe default."
+        ),
         args_model=PlanMealArgs,
         kind="write",
         handler=plan_meal,
     ),
     Tool(
         name="move_meal",
-        description="Move a planned meal to another date and/or slot.",
+        description="Move a planned meal to another date and/or place in the day's list.",
         args_model=MoveMealArgs,
         kind="write",
         handler=move_meal,
+    ),
+    Tool(
+        name="set_meal_slot",
+        description="Set or remove (null) the slot label of a planned meal; order is unchanged.",
+        args_model=SetMealSlotArgs,
+        kind="write",
+        handler=set_meal_slot,
     ),
     Tool(
         name="set_servings",

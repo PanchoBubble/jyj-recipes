@@ -140,7 +140,7 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
 - [x] **PASS** Tool surface (`build_registry()`): reads `search_recipes`, `get_recipe`,
   `list_ingredients`, `get_stock`, `get_plan`, `preview_shopping`; writes `create_recipe`,
   `update_recipe`, `create_ingredient`, `adjust_stock`, `plan_meal`, `move_meal`,
-  `set_servings`, `mark_cooked`, `uncook_meal`, `create_shopping_list`; confirmation required
+  `set_meal_slot`, `set_servings`, `mark_cooked`, `uncook_meal`, `create_shopping_list`; confirmation required
   for `delete_recipe`, `set_stock`, `remove_meal`. No tool completes a shopping list
   (that is `POST /shopping-lists/{id}/complete`, UI only) and the app holds no money-like state.
 

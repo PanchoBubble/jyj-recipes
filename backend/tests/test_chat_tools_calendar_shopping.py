@@ -124,6 +124,7 @@ def test_plan_meal_resolves_slot_names_case_insensitively(
     assert meal == {
         "meal_id": meal["meal_id"],
         "date": "2026-10-05",
+        "position": 0,
         "slot": "Dinner",
         "recipe_id": recipe.id,
         "recipe": "Bread",
@@ -132,6 +133,17 @@ def test_plan_meal_resolves_slot_names_case_insensitively(
     }
     stored = ctx.db.get(PlannedMeal, meal["meal_id"])
     assert stored.created_by == ctx.user.id
+
+
+def test_plan_meal_without_slot_appends_to_the_day(
+    registry: Registry, ctx: ToolContext, recipe: Recipe
+) -> None:
+    labelled = plan(registry, ctx, recipe, slot="Tea")
+    unlabelled = plan(registry, ctx, recipe, slot=None)
+
+    assert (unlabelled["slot"], unlabelled["position"]) == (None, 1)
+    assert labelled["position"] == 0
+    assert ctx.db.get(PlannedMeal, unlabelled["meal_id"]).slot_id is None
 
 
 def test_plan_meal_accepts_slot_ids_and_servings(
@@ -196,6 +208,7 @@ def test_get_plan_is_compact_and_ordered(
 ) -> None:
     dinner = plan(registry, ctx, recipe, slot="Dinner")
     lunch = plan(registry, ctx, recipe, slot="Lunch")
+    unlabelled = plan(registry, ctx, recipe, slot=None)
     later = plan(registry, ctx, recipe, date=TUESDAY.isoformat(), servings=3)
     plan(registry, ctx, recipe, date="2026-11-30")
 
@@ -203,12 +216,13 @@ def test_get_plan_is_compact_and_ordered(
 
     assert result.status is ToolStatus.SUCCESS
     assert result.data["from"] == "2026-10-05" and result.data["to"] == "2026-10-06"
-    assert [m["meal_id"] for m in result.data["meals"]] == [
-        lunch["meal_id"],
-        dinner["meal_id"],
-        later["meal_id"],
+    assert [(m["meal_id"], m["position"], m["slot"]) for m in result.data["meals"]] == [
+        (dinner["meal_id"], 0, "Dinner"),
+        (lunch["meal_id"], 1, "Lunch"),
+        (unlabelled["meal_id"], 2, None),
+        (later["meal_id"], 0, "Dinner"),
     ]
-    assert result.data["meals"][2] == later
+    assert result.data["meals"][3] == later
 
 
 @pytest.mark.parametrize(
@@ -238,46 +252,95 @@ def test_get_plan_allows_exactly_31_days(registry: Registry, ctx: ToolContext) -
 
 
 def test_move_meal(registry: Registry, ctx: ToolContext, recipe: Recipe) -> None:
-    meal = plan(registry, ctx, recipe)
+    a, b, c = (plan(registry, ctx, recipe)["meal_id"] for _ in range(3))
 
-    moved = registry.execute(
-        "move_meal", {"meal_id": meal["meal_id"], "date": "2026-10-06", "slot": "tea"}, ctx
-    )
-    assert moved.status is ToolStatus.SUCCESS
-    assert (moved.data["date"], moved.data["slot"]) == ("2026-10-06", "Tea")
+    def move(meal_id: int, date: str, position: int | None) -> dict:
+        result = registry.execute(
+            "move_meal", {"meal_id": meal_id, "date": date, "position": position}, ctx
+        )
+        assert result.status is ToolStatus.SUCCESS, result.error
+        return result.data
 
-    slot_only = registry.execute(
-        "move_meal", {"meal_id": meal["meal_id"], "date": None, "slot": "Lunch"}, ctx
-    )
-    assert (slot_only.data["date"], slot_only.data["slot"]) == ("2026-10-06", "Lunch")
+    def order(date: dt.date) -> list[int]:
+        return [m.id for m in meals_service.list_planned_meals(ctx.db, date, date)]
 
-    date_only = registry.execute(
-        "move_meal", {"meal_id": meal["meal_id"], "date": "2026-10-07", "slot": None}, ctx
+    reordered = move(c, "2026-10-05", 0)
+    assert (reordered["date"], reordered["position"], reordered["slot"]) == (
+        "2026-10-05",
+        0,
+        "Dinner",
     )
-    assert (date_only.data["date"], date_only.data["slot"]) == ("2026-10-07", "Lunch")
+    assert order(MONDAY) == [c, a, b]
+
+    in_place = move(a, "2026-10-05", None)
+    assert in_place["position"] == 1
+
+    appended = move(c, "2026-10-06", None)
+    assert (appended["date"], appended["position"]) == ("2026-10-06", 0)
+    placed = move(b, "2026-10-06", 0)
+    assert placed["position"] == 0
+    assert order(MONDAY) == [a]
+    assert order(TUESDAY) == [b, c]
 
 
 def test_move_meal_validation(registry: Registry, ctx: ToolContext, recipe: Recipe) -> None:
     meal = plan(registry, ctx, recipe)
 
     assert_rejected(
-        registry.execute("move_meal", {"meal_id": meal["meal_id"], "date": None, "slot": None}, ctx)
+        registry.execute(
+            "move_meal", {"meal_id": meal["meal_id"], "date": None, "position": 0}, ctx
+        )
     )
     assert_rejected(
         registry.execute(
-            "move_meal", {"meal_id": meal["meal_id"], "date": None, "slot": "Supper"}, ctx
-        ),
-        "unknown_slot",
+            "move_meal", {"meal_id": meal["meal_id"], "date": "2026-10-06", "position": -1}, ctx
+        )
     )
     assert_rejected(
         registry.execute(
-            "move_meal", {"meal_id": 999_999, "date": "2026-10-06", "slot": None}, ctx
+            "move_meal", {"meal_id": meal["meal_id"], "date": "2026-10-06", "slot": "Tea"}, ctx
+        )
+    )
+    assert_rejected(
+        registry.execute(
+            "move_meal", {"meal_id": 999_999, "date": "2026-10-06", "position": None}, ctx
         ),
         "not_found",
     )
     ctx.db.expire_all()
     stored = ctx.db.get(PlannedMeal, meal["meal_id"])
     assert (stored.date, stored.slot.name) == (MONDAY, "Dinner")
+
+
+def test_set_meal_slot(registry: Registry, ctx: ToolContext, recipe: Recipe) -> None:
+    first = plan(registry, ctx, recipe, slot=None)
+    second = plan(registry, ctx, recipe)
+
+    labelled = registry.execute(
+        "set_meal_slot", {"meal_id": first["meal_id"], "slot": "  lunch"}, ctx
+    )
+    assert labelled.status is ToolStatus.SUCCESS, labelled.error
+    assert (labelled.data["slot"], labelled.data["position"]) == ("Lunch", 0)
+
+    cleared = registry.execute("set_meal_slot", {"meal_id": second["meal_id"], "slot": None}, ctx)
+    assert (cleared.data["slot"], cleared.data["position"]) == (None, 1)
+    ctx.db.expire_all()
+    assert ctx.db.get(PlannedMeal, second["meal_id"]).slot_id is None
+
+
+def test_set_meal_slot_validation(registry: Registry, ctx: ToolContext, recipe: Recipe) -> None:
+    meal = plan(registry, ctx, recipe)
+
+    assert_rejected(registry.execute("set_meal_slot", {"meal_id": meal["meal_id"]}, ctx))
+    assert_rejected(
+        registry.execute("set_meal_slot", {"meal_id": meal["meal_id"], "slot": "Supper"}, ctx),
+        "unknown_slot",
+    )
+    assert_rejected(
+        registry.execute("set_meal_slot", {"meal_id": 999_999, "slot": None}, ctx), "not_found"
+    )
+    ctx.db.expire_all()
+    assert ctx.db.get(PlannedMeal, meal["meal_id"]).slot.name == "Dinner"
 
 
 def test_set_servings(registry: Registry, ctx: ToolContext, recipe: Recipe) -> None:

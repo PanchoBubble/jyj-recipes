@@ -27,8 +27,8 @@ class ShoppingRange(BaseModel):
 class MealRefOut(BaseModel):
     planned_meal_id: int
     date: dt.date
-    slot_id: int
-    slot_name: str
+    slot_id: int | None
+    slot_name: str | None
     recipe_id: int
     recipe_name: str
     servings: int

@@ -42,14 +42,15 @@ def meal(
     servings: int = 2,
     status: str = "planned",
     meal_id: int | None = None,
-    slot: tuple[int, str, int] = (1, "Lunch", 0),
+    slot: tuple[int, str] | None = (1, "Lunch"),
+    position: int = 0,
 ) -> MealInput:
     return MealInput(
         id=meal_id if meal_id is not None else next(_ids),
         date=day,
-        slot_id=slot[0],
-        slot_name=slot[1],
-        slot_position=slot[2],
+        slot_id=None if slot is None else slot[0],
+        slot_name=None if slot is None else slot[1],
+        position=position,
         recipe_id=recipe_id,
         recipe_name=NAMES[recipe_id],
         servings=servings,
@@ -217,7 +218,7 @@ def test_reservation_leaves_the_remainder_available() -> None:
 def test_reservation_ignores_cooked_skipped_and_unconvertible_lines() -> None:
     meals = [
         meal(TODAY, status="cooked"),
-        meal(TODAY, status="skipped", slot=(2, "Dinner", 1)),
+        meal(TODAY, status="skipped", slot=(2, "Dinner"), position=1),
         meal(TODAY, recipe_id=CREPES),
         meal(START),
     ]
@@ -270,8 +271,8 @@ def test_servings_scale_linearly(servings: int) -> None:
 
 def test_multiple_recipes_sharing_an_ingredient() -> None:
     meals = [
-        meal(START, meal_id=1, slot=(2, "Dinner", 1)),
-        meal(START, recipe_id=CREPES, servings=4, meal_id=2),
+        meal(START, meal_id=1, slot=(2, "Dinner"), position=1),
+        meal(START, recipe_id=CREPES, servings=4, meal_id=2, slot=None),
         meal(START + dt.timedelta(days=1), recipe_id=BREAD, servings=1, meal_id=3),
     ]
     lines = [
@@ -290,6 +291,8 @@ def test_multiple_recipes_sharing_an_ingredient() -> None:
         (3, D("500")),
     ]
     assert found.contributions[1].meal.slot_name == "Dinner"
+    assert found.contributions[0].meal.slot_id is None
+    assert found.contributions[0].meal.slot_name is None
     assert found.contributions[0].unit_code == "kg"
     assert found.contributions[0].amount == D("0.20")
 
