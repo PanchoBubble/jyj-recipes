@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -25,6 +26,13 @@ class Settings(BaseSettings):
     codex_binary: str = "codex"
     codex_model: str | None = None
     codex_timeout_seconds: float = Field(default=90.0, gt=0)
+
+    whisper_binary: str = "whisper-cli"
+    whisper_model_path: Path = Path("/var/lib/jyj/whisper/ggml-tiny.bin")
+    whisper_threads: int = Field(default=4, ge=1, le=16)
+    whisper_timeout_seconds: float = Field(default=30.0, gt=0)
+    stt_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
+    stt_max_seconds: float = Field(default=60.0, gt=0)
 
     @model_validator(mode="after")
     def _require_explicit_values_in_production(self) -> "Settings":

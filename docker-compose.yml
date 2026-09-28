@@ -36,6 +36,7 @@ services:
     volumes:
       - photos:/var/lib/jyj/photos
       - codex-home:/var/lib/codex
+      - whisper-models:/var/lib/jyj/whisper
     depends_on:
       db:
         condition: service_healthy
@@ -97,5 +98,6 @@ volumes:
   pgdata:
   photos:
   codex-home:
+  whisper-models:
   caddy-data:
   caddy-config:

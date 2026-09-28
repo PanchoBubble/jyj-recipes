@@ -50,6 +50,10 @@ uv run jyj users list
 
 The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj` on every non-GET request under `/api/v1`.
 
+## Speech to text
+
+The backend image ships `whisper-cli` (whisper.cpp v1.9.1, built for armv8.2-a+dotprod on arm64) and a minimal static `ffmpeg`. Models are not baked in: `make whisper-download` (or `model=base`) fetches the multilingual ggml model from the whisper.cpp Hugging Face repo into the `whisper-models` volume and verifies its pinned SHA-256. `jyj.stt.get_transcriber()` converts uploads (webm/opus, mp4/aac, ogg, wav, mp3; max 5 MiB, 60 s) to 16 kHz mono WAV, runs one job at a time and deletes temp files afterwards. Audio is never persisted and transcripts are only logged at DEBUG. `tests/test_stt_integration.py` runs against a real install when `WHISPER_MODEL_PATH` points at a model.
+
 ## Config
 
 Copy `.env.example` to `.env` and replace the placeholders. `.env` is git-ignored; never commit real secrets.
