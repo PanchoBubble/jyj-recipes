@@ -49,6 +49,8 @@ import {
   type RecipeFormValues,
 } from '@/features/recipes/form'
 import { IngredientCombobox } from '@/features/recipes/IngredientCombobox'
+import { photoErrorMessage, useUploadRecipePhoto } from '@/features/recipes/photo'
+import { PhotoField } from '@/features/recipes/PhotoField'
 import { BASE_UNITS } from '@/features/stock/quantity'
 import { ApiError } from '@/lib/api'
 
@@ -99,7 +101,10 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
   const update = useUpdateRecipe(recipe?.id ?? 0)
   const units = useUnits()
   const ingredients = useIngredients()
+  const uploadPhoto = useUploadRecipePhoto()
   const [formError, setFormError] = useState<string | null>(null)
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoProgress, setPhotoProgress] = useState<number | null>(null)
   const form = useForm<RecipeFormValues>({
     resolver: zodResolver(recipeSchema),
     defaultValues: toFormValues(recipe),
@@ -112,10 +117,9 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
   const onSubmit = form.handleSubmit(async (values) => {
     setFormError(null)
     const input = toRecipeInput(values)
+    let saved: Recipe
     try {
-      const saved = recipe ? await update.mutateAsync(input) : await create.mutateAsync(input)
-      toast.success(recipe ? `Saved ${saved.name}` : `Added ${saved.name}`)
-      navigate(`/recipes/${saved.id}`, { replace: true })
+      saved = recipe ? await update.mutateAsync(input) : await create.mutateAsync(input)
     } catch (error) {
       if (!(error instanceof ApiError) || error.status === 0 || error.status >= 500) {
         setFormError(recipeErrorMessage(error))
@@ -134,7 +138,27 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
       if (unplaced.length > 0) setFormError(unplaced.join(' '))
       else if (first) setFormError('Fix the highlighted fields and save again.')
       if (first) form.setFocus(first as keyof RecipeFormValues)
+      return
     }
+
+    if (!recipe && photo) {
+      // The recipe exists now, so a failed upload must not keep the user here where a
+      // second submit would create a duplicate; the detail page can retry the photo.
+      setPhotoProgress(0)
+      try {
+        await uploadPhoto.mutateAsync({ id: saved.id, file: photo, onProgress: setPhotoProgress })
+        toast.success(`Added ${saved.name}`)
+      } catch (error) {
+        toast.error(`Added ${saved.name}, but the photo didn't upload`, {
+          description: `${photoErrorMessage(error)} You can try again from the recipe page.`,
+        })
+      } finally {
+        setPhotoProgress(null)
+      }
+    } else {
+      toast.success(recipe ? `Saved ${saved.name}` : `Added ${saved.name}`)
+    }
+    navigate(`/recipes/${saved.id}`, { replace: true })
   })
 
   const servingsField = form.register('default_servings', { valueAsNumber: true })
@@ -165,6 +189,19 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
         />
         <FieldError id="recipe-name-hint" message={errors.name?.message} />
       </div>
+
+      {recipe ? (
+        <PhotoField recipe={recipe} label="Photo" hint="Photo changes save right away." />
+      ) : (
+        <PhotoField
+          recipe={null}
+          pending={photo}
+          onPendingChange={setPhoto}
+          progress={photoProgress}
+          label="Photo"
+          hint={photo ? 'Uploads after the recipe is created.' : 'Optional.'}
+        />
+      )}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="recipe-description">Description</Label>
@@ -263,7 +300,13 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
 
       <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] -mx-4 border-t bg-background/95 px-4 py-3 backdrop-blur">
         <Button type="submit" className="h-11 w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Saving…' : recipe ? 'Save recipe' : 'Create recipe'}
+          {photoProgress !== null
+            ? `Uploading photo ${Math.round(photoProgress * 100)}%…`
+            : isSubmitting
+              ? 'Saving…'
+              : recipe
+                ? 'Save recipe'
+                : 'Create recipe'}
         </Button>
       </div>
     </form>

@@ -127,6 +127,8 @@ function RecipeCard({ recipe }: { recipe: RecipeSummary }) {
         <RecipePhoto
           src={recipe.photo_thumb_url ?? recipe.photo_url}
           alt={recipe.name}
+          width={64}
+          height={64}
           className="size-16 shrink-0 rounded-lg"
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">

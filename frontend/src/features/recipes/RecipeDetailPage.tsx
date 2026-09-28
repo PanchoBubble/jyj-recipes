@@ -26,7 +26,7 @@ import {
   type ScaledIngredient,
 } from '@/features/recipes/api'
 import { unitLabel } from '@/features/recipes/form'
-import { RecipePhoto } from '@/features/recipes/RecipePhoto'
+import { PhotoField } from '@/features/recipes/PhotoField'
 import { useDebouncedValue } from '@/features/recipes/useDebouncedValue'
 import { formatQuantity, trimAmount } from '@/features/stock/quantity'
 
@@ -89,11 +89,7 @@ function RecipeDetail({ recipe }: { recipe: Recipe }) {
         </Button>
       </div>
 
-      <RecipePhoto
-        src={recipe.photo_url}
-        alt={recipe.name}
-        className="aspect-video w-full rounded-xl"
-      />
+      <PhotoField recipe={recipe} />
 
       <header className="flex flex-col gap-1">
         <h2 className="text-xl font-semibold">{recipe.name}</h2>
