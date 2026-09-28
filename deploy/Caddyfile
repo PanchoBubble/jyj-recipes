@@ -39,6 +39,7 @@
 		respond 404
 	}
 
+	# With no trusted_proxies set, Caddy discards client-sent X-Forwarded-For and sends the peer IP.
 	handle /api/* {
 		reverse_proxy backend:8000
 	}

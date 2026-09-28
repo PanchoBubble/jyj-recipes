@@ -7,6 +7,7 @@ from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, func, select
 from sqlalchemy.orm import Session, sessionmaker
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from jyj.api.auth import SESSION_COOKIE
 from jyj.db import get_db, session_scope
@@ -344,3 +345,45 @@ def test_insecure_cookie_is_refused_in_production() -> None:
             session_secret="s" * 40,
             session_cookie_secure=False,
         )
+
+
+PROXY_IP = "10.203.87.10"
+
+
+@pytest.fixture
+def proxied_app(session_factory: Callable[[], Session]):
+    app = create_app()
+
+    def test_db() -> Iterator[Session]:
+        yield from session_scope(session_factory)
+
+    app.dependency_overrides[get_db] = test_db
+    limiter: LoginRateLimiter = app.state.login_limiter
+    limiter.free_failures = 1000
+    return app, limiter
+
+
+@pytest.mark.parametrize(
+    ("peer", "expected_keys"),
+    [
+        (PROXY_IP, {f"192.168.1.{i}" for i in range(6)}),
+        ("192.168.1.99", {"192.168.1.99"}),
+    ],
+    ids=["trusted-proxy", "untrusted-peer"],
+)
+def test_rate_limit_keys_on_client_ip_resolved_from_trusted_proxy_only(
+    proxied_app, peer: str, expected_keys: set[str]
+) -> None:
+    app, limiter = proxied_app
+    wrapped = ProxyHeadersMiddleware(app, trusted_hosts=PROXY_IP)
+    statuses = []
+    with TestClient(wrapped, base_url="https://testserver", client=(peer, 40000)) as client:
+        for i in range(6):
+            headers = {**CSRF, "X-Forwarded-For": f"192.168.1.{i}"}
+            statuses.append(login(client, username="ghost", headers=headers).status_code)
+
+    assert set(limiter._ips) == expected_keys
+    if peer == PROXY_IP:
+        assert statuses == [401] * 6
+    else:
+        assert statuses == [401] * 5 + [429]

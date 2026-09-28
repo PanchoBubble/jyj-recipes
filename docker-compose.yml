@@ -33,6 +33,8 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       CODEX_HOME: /var/lib/codex
       PHOTOS_DIR: /var/lib/jyj/photos
+      # Only the web container may set X-Forwarded-For; never "*".
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-10.203.87.10}
     volumes:
       - photos:/var/lib/jyj/photos
       - codex-home:/var/lib/codex
@@ -64,6 +66,10 @@ services:
       # /data holds Caddy's internal root CA; losing it means reinstalling the CA on every device.
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      default:
+        # Pinned so the backend can trust proxy headers from this address alone.
+        ipv4_address: 10.203.87.10
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "--no-check-certificate", "https://localhost/"]
       interval: 15s
@@ -121,6 +127,12 @@ services:
       timeout: 3s
       retries: 15
     mem_limit: 256m
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.203.87.0/24
 
 volumes:
   pgdata:
