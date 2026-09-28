@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jyj.models import PlannedMeal, PlannedMealStatus
 from jyj.services.meal_slots import NAME_MAX
+from jyj.services.photos import photo_url, thumb_url
 from jyj.services.recipes import SERVINGS_MAX
 
 SlotName = Annotated[str, Field(min_length=1, max_length=NAME_MAX)]
@@ -66,7 +67,8 @@ class PlannedMealUpdate(BaseModel):
 class PlannedRecipeOut(BaseModel):
     id: int
     name: str
-    photo_path: str | None
+    photo_url: str | None
+    photo_thumb_url: str | None
     default_servings: int
     archived_at: dt.datetime | None
 
@@ -106,7 +108,8 @@ class PlannedMealOut(BaseModel):
             recipe=PlannedRecipeOut(
                 id=recipe.id,
                 name=recipe.name,
-                photo_path=recipe.photo_path,
+                photo_url=photo_url(recipe.photo_path),
+                photo_thumb_url=thumb_url(recipe.photo_path),
                 default_servings=recipe.default_servings,
                 archived_at=recipe.archived_at,
             ),

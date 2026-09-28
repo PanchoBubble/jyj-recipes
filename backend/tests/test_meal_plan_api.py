@@ -273,12 +273,29 @@ def test_create_defaults_servings_from_recipe_and_renders_recipe_and_slot(
     assert meal["recipe"] == {
         "id": recipe["id"],
         "name": "Pancakes",
-        "photo_path": None,
+        "photo_url": None,
+        "photo_thumb_url": None,
         "default_servings": 3,
         "archived_at": None,
     }
     assert meal["slot"]["name"] == "Lunch"
     assert client.get(f"{API}/planned-meals/{meal['id']}").json() == meal
+
+
+def test_planned_recipe_exposes_photo_urls_not_the_stored_path(
+    client: TestClient, db: Session, slots: dict
+) -> None:
+    recipe = create_recipe(client)
+    db.execute(update(Recipe).where(Recipe.id == recipe["id"]).values(photo_path="abc123.webp"))
+    db.commit()
+
+    meal = plan(client, MONDAY, slots["lunch"]["id"], recipe["id"])
+    listed = week(client, MONDAY, MONDAY)
+
+    assert meal["recipe"]["photo_url"] == "/media/abc123.webp"
+    assert meal["recipe"]["photo_thumb_url"] == "/media/abc123_thumb.webp"
+    assert "photo_path" not in meal["recipe"]
+    assert listed[0]["recipe"] == meal["recipe"]
 
 
 def test_create_appends_within_a_cell(client: TestClient, slots: dict) -> None:
