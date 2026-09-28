@@ -534,10 +534,6 @@ def test_deleting_an_ingredient_used_by_a_recipe_is_409(client: TestClient, pant
 
     problem = assert_problem(client.delete(f"{API}/ingredients/{pantry['egg']['id']}"), 409)
     assert problem["references"] == ["recipe_ingredients"]
-    dimension_change = client.patch(
-        f"{API}/ingredients/{pantry['egg']['id']}", json={"dimension": "mass"}
-    )
-    assert_problem(dimension_change, 409)
 
     client.delete(f"{API}/recipes/{recipe['id']}")
     assert client.delete(f"{API}/ingredients/{pantry['egg']['id']}").status_code == 204
@@ -643,3 +639,104 @@ def test_pagination(client: TestClient) -> None:
 )
 def test_list_rejects_bad_params(client: TestClient, params: dict) -> None:
     assert_problem(client.get(f"{API}/recipes", params=params), 422)
+
+
+# --- ingredient conversion changes vs recipe lines -----------------------------------------
+
+
+def patch_ingredient(client: TestClient, ingredient_id: int, **changes):
+    return client.patch(f"{API}/ingredients/{ingredient_id}", json=changes)
+
+
+@pytest.mark.parametrize(
+    ("name", "factor", "cross_unit", "own_unit"),
+    [("milk", "grams_per_ml", "g", "ml"), ("egg", "grams_per_piece", "g", "piece")],
+)
+def test_clearing_a_factor_used_by_a_recipe_line_is_409(
+    client: TestClient, pantry: dict, name: str, factor: str, cross_unit: str, own_unit: str
+) -> None:
+    item = pantry[name]
+    crossing = create_recipe(client, "Crossing", ingredients=[line(item["id"], "100", cross_unit)])
+    create_recipe(client, "Native", ingredients=[line(item["id"], "1", own_unit)])
+
+    problem = assert_problem(patch_ingredient(client, item["id"], **{factor: None}), 409)
+
+    assert problem["recipes"] == [{"id": crossing["id"], "name": "Crossing", "units": [cross_unit]}]
+    stored = client.get(f"{API}/ingredients/{item['id']}").json()[factor]
+    assert Decimal(stored) == Decimal(item[factor])
+
+
+@pytest.mark.parametrize(
+    ("name", "factor", "own_unit"),
+    [("milk", "grams_per_ml", "cup"), ("egg", "grams_per_piece", "piece")],
+)
+def test_clearing_a_factor_no_line_needs_passes(
+    client: TestClient, pantry: dict, name: str, factor: str, own_unit: str
+) -> None:
+    item = pantry[name]
+    create_recipe(
+        client, ingredients=[line(item["id"], "1", own_unit), line(item["id"], None, "pinch")]
+    )
+
+    response = patch_ingredient(client, item["id"], **{factor: None})
+
+    assert response.status_code == 200, response.text
+    assert response.json()[factor] is None
+
+
+def test_clearing_a_factor_on_an_unused_ingredient_passes(client: TestClient, pantry: dict) -> None:
+    response = patch_ingredient(client, pantry["milk"]["id"], grams_per_ml=None)
+    assert response.status_code == 200, response.text
+
+
+def test_changing_a_factor_value_keeps_lines_convertible(client: TestClient, pantry: dict) -> None:
+    create_recipe(client, ingredients=[line(pantry["milk"]["id"], "100", "g")])
+
+    response = patch_ingredient(client, pantry["milk"]["id"], grams_per_ml="1.1")
+
+    assert response.status_code == 200, response.text
+    assert Decimal(response.json()["grams_per_ml"]) == Decimal("1.1")
+
+
+def test_dimension_change_passes_when_lines_stay_convertible(
+    client: TestClient, pantry: dict
+) -> None:
+    create_recipe(client, ingredients=[line(pantry["egg"]["id"], "1", "piece")])
+
+    response = patch_ingredient(client, pantry["egg"]["id"], dimension="mass")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["dimension"] == "mass"
+    assert response.json()["default_unit"] == "g"
+
+
+def test_dimension_change_is_409_when_a_line_would_break(client: TestClient, pantry: dict) -> None:
+    recipe = create_recipe(client, ingredients=[line(pantry["egg"]["id"], "1", "piece")])
+
+    problem = assert_problem(patch_ingredient(client, pantry["egg"]["id"], dimension="volume"), 409)
+
+    assert problem["recipes"] == [{"id": recipe["id"], "name": "Pancakes", "units": ["piece"]}]
+    assert client.get(f"{API}/ingredients/{pantry['egg']['id']}").json()["dimension"] == "count"
+
+
+def test_dimension_change_with_the_missing_factor_in_the_same_patch_passes(
+    client: TestClient, pantry: dict
+) -> None:
+    create_recipe(client, ingredients=[line(pantry["egg"]["id"], "1", "piece")])
+
+    response = patch_ingredient(
+        client, pantry["egg"]["id"], dimension="volume", grams_per_ml="1.05"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["dimension"] == "volume"
+
+
+def test_dimension_change_and_clearing_together_is_409(client: TestClient, pantry: dict) -> None:
+    create_recipe(client, ingredients=[line(pantry["egg"]["id"], "1", "piece")])
+
+    problem = assert_problem(
+        patch_ingredient(client, pantry["egg"]["id"], dimension="mass", grams_per_piece=None), 409
+    )
+
+    assert [r["units"] for r in problem["recipes"]] == [["piece"]]

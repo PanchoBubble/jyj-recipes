@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Connection, Engine, delete, func, select
+from sqlalchemy import Connection, Engine, delete, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from jyj.api.auth import SESSION_COOKIE
@@ -262,9 +262,10 @@ def test_unconvertible_lines_are_reported_not_guessed(
         },
     ).json()
     set_stock(client, garlic["id"], "4", "piece")
-    # The recipe was valid when saved; the factor it relied on is gone by cooking time.
-    patched = client.patch(f"{API}/ingredients/{garlic['id']}", json={"grams_per_piece": None})
-    assert patched.status_code == 200, patched.text
+    # The recipe was valid when saved; the factor it relied on is gone by cooking time. The API
+    # refuses that edit now, so reach past it to model data saved before the guard existed.
+    db.execute(update(Ingredient).where(Ingredient.id == garlic["id"]).values(grams_per_piece=None))
+    db.commit()
     slot = client.get(f"{API}/meal-slots").json()[0]
     meal = client.post(
         f"{API}/planned-meals",

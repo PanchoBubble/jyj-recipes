@@ -9,9 +9,26 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from jyj.models import Ingredient, RecipeIngredient, StockItem, StockMovement, StockSource, User
+from jyj.models import (
+    Ingredient,
+    Recipe,
+    RecipeIngredient,
+    StockItem,
+    StockMovement,
+    StockSource,
+    User,
+)
 from jyj.services.errors import ConflictError, InvalidError, NotFoundError
-from jyj.units import UNITS, Dimension, UnknownUnitError, base_unit, get_unit
+from jyj.units import (
+    UNITS,
+    Dimension,
+    IngredientConversions,
+    Unconvertible,
+    UnknownUnitError,
+    base_unit,
+    convert,
+    get_unit,
+)
 
 NAME_MAX = 100
 CATEGORY_MAX = 50
@@ -37,16 +54,44 @@ def _used_by_recipes(db: Session, ingredient_id: int) -> bool:
     return bool(db.scalar(select(exists().where(RecipeIngredient.ingredient_id == ingredient_id))))
 
 
-# Register a check per table that points at ingredients (e.g. recipe lines) so deletes and
-# dimension changes are refused while anything still depends on the ingredient.
+# Register a check per table that points at ingredients so deletes and dimension changes are
+# refused while anything still depends on the ingredient.
 REFERENCE_CHECKS: dict[str, ReferenceCheck] = {
     "stock_movements": _has_stock_movements,
     "recipe_ingredients": _used_by_recipes,
 }
 
 
+# Recipe lines keep their own unit, so a dimension change only has to leave them convertible.
+DIMENSION_CHECK_EXEMPT = frozenset({"recipe_ingredients"})
+
+
 def find_references(db: Session, ingredient_id: int) -> list[str]:
     return [name for name, check in REFERENCE_CHECKS.items() if check(db, ingredient_id)]
+
+
+def recipes_broken_by(
+    db: Session, ingredient_id: int, dimension: Dimension, conversions: IngredientConversions
+) -> list[dict[str, Any]]:
+    """Recipes with a line for this ingredient that would no longer convert to its base unit."""
+    target = base_unit(dimension)
+    rows = db.execute(
+        select(Recipe.id, Recipe.name, RecipeIngredient.unit_code)
+        .join(Recipe, Recipe.id == RecipeIngredient.recipe_id)
+        .where(
+            RecipeIngredient.ingredient_id == ingredient_id,
+            RecipeIngredient.unit_dimension != Dimension.NONE,
+        )
+        .distinct()
+        .order_by(Recipe.id, RecipeIngredient.unit_code)
+    )
+    broken: dict[int, dict[str, Any]] = {}
+    for recipe_id, name, unit_code in rows:
+        result = convert(Decimal(1), unit_code, target, conversions)
+        if isinstance(result, Unconvertible):
+            entry = broken.setdefault(recipe_id, {"id": recipe_id, "name": name, "units": []})
+            entry["units"].append(unit_code)
+    return list(broken.values())
 
 
 def _escape_like(text: str) -> str:
@@ -125,7 +170,9 @@ def update_ingredient(
     if "dimension" in changes:
         dim = _clean_dimension(changes["dimension"])
         if dim is not ingredient.dimension:
-            refs = find_references(db, ingredient.id)
+            refs = [
+                r for r in find_references(db, ingredient.id) if r not in DIMENSION_CHECK_EXEMPT
+            ]
             if refs:
                 raise ConflictError(
                     "cannot change the dimension of an ingredient that is in use",
@@ -137,14 +184,20 @@ def update_ingredient(
         unit = base_unit(dim).code
     else:
         unit = ingredient.default_unit
+    factors = {
+        f: _clean_factor(f, changes[f]) if f in changes else getattr(ingredient, f)
+        for f in ("grams_per_ml", "grams_per_piece")
+    }
+    conversions = IngredientConversions(**factors)
+    if dim is not ingredient.dimension or conversions != ingredient.conversions:
+        _ensure_recipe_lines_convertible(db, ingredient, dim, conversions)
+
     ingredient.dimension = dim
     ingredient.default_unit = unit
-
+    ingredient.grams_per_ml = factors["grams_per_ml"]
+    ingredient.grams_per_piece = factors["grams_per_piece"]
     if "category" in changes:
         ingredient.category = _clean_category(changes["category"])
-    for factor in ("grams_per_ml", "grams_per_piece"):
-        if factor in changes:
-            setattr(ingredient, factor, _clean_factor(factor, changes[factor]))
 
     _flush_unique(db, ingredient.name)
     db.refresh(ingredient)
@@ -158,6 +211,18 @@ def delete_ingredient(db: Session, user: User, source: StockSource, ingredient_i
         raise ConflictError("ingredient is in use and cannot be deleted", references=refs)
     db.delete(ingredient)
     db.flush()
+
+
+def _ensure_recipe_lines_convertible(
+    db: Session, ingredient: Ingredient, dimension: Dimension, conversions: IngredientConversions
+) -> None:
+    recipes = recipes_broken_by(db, ingredient.id, dimension, conversions)
+    if recipes:
+        raise ConflictError(
+            f"recipes use {ingredient.name!r} in units that would no longer convert; "
+            "change those lines first",
+            recipes=recipes,
+        )
 
 
 def _clean_name(name: str) -> str:
