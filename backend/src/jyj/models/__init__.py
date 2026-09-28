@@ -3,6 +3,7 @@
 Import every model module here so Alembic autogenerate sees its tables.
 """
 
+from jyj.models.chat import ChatAction, ChatActionStatus
 from jyj.models.ingredient import Ingredient
 from jyj.models.meal_plan import MealSlot, PlannedMeal, PlannedMealStatus
 from jyj.models.recipe import Recipe, RecipeIngredient
@@ -12,6 +13,8 @@ from jyj.models.user import AuthSession, User
 
 __all__ = [
     "AuthSession",
+    "ChatAction",
+    "ChatActionStatus",
     "Ingredient",
     "MealSlot",
     "PlannedMeal",
