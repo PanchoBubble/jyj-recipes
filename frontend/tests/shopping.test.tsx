@@ -292,7 +292,7 @@ describe('shopping planner', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/shopping/lists/7'))
     expect(body).toEqual({ from: '2026-09-28', to: '2026-10-04' })
     expect(await screen.findByText('List saved')).toBeInTheDocument()
-    expect(checkbox('Milk')).toHaveAttribute('aria-checked', 'false')
+    expect(await screen.findByRole('checkbox', { name: /^Milk/ })).toHaveAttribute('aria-checked', 'false')
     expect(within(screen.getByRole('region', { name: 'Check you have' })).getByText('Salt')).toBeInTheDocument()
   })
 

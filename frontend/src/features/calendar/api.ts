@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ingredientKeys } from '@/features/ingredients/api'
+import { shoppingKeys } from '@/features/shopping/api'
+import { stockKeys } from '@/features/stock/api'
 import { ApiError, api } from '@/lib/api'
+
+import { toastCookResult, type CookResult } from './cook'
 
 import type { IsoDate } from './dates'
 import {
@@ -183,5 +188,45 @@ export function useDeletePlannedMeal() {
       toast.error(`Couldn't remove ${meal.recipe.name}`, { description: mealErrorMessage(error) })
     },
     onSettled: () => settle(queryClient),
+  })
+}
+
+export type CookAction = 'cook' | 'uncook'
+
+/**
+ * Cooking writes stock movements, so stock, ingredient levels and shopping previews
+ * go stale along with the week view.
+ */
+export function useCookPlannedMeal() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationKey,
+    mutationFn: ({ meal, action }: { meal: PlannedMeal; action: CookAction }) =>
+      api.post<CookResult>(`/planned-meals/${meal.id}/${action}`),
+    onMutate: async ({ meal, action }) => {
+      const status = action === 'cook' ? 'cooked' : 'planned'
+      const snapshot = await optimistic(queryClient, (meals) =>
+        meals.map((m) => (m.id === meal.id ? { ...m, status } : m)),
+      )
+      return { snapshot }
+    },
+    onSuccess: (result, { action }) => {
+      patchCaches(queryClient, (meals) => applyReplace(meals, result.meal.id, result.meal))
+      toastCookResult(result, action)
+    },
+    onError: (error, { meal, action }, context) => {
+      rollback(queryClient, context?.snapshot)
+      const verb = action === 'cook' ? 'mark' : 'undo'
+      toast.error(`Couldn't ${verb} ${meal.recipe.name}${action === 'cook' ? ' as cooked' : ''}`, {
+        description: mealErrorMessage(error),
+      })
+    },
+    onSettled: () =>
+      Promise.all([
+        settle(queryClient),
+        queryClient.invalidateQueries({ queryKey: stockKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ingredientKeys.all }),
+        queryClient.invalidateQueries({ queryKey: shoppingKeys.previews() }),
+      ]),
   })
 }

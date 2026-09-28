@@ -103,6 +103,7 @@ describe('logout', () => {
     const headers: (string | null)[] = []
     server.use(
       meAs(alice),
+      http.get(`${API}/meal-slots`, () => HttpResponse.json([])),
       http.post(`${API}/auth/logout`, ({ request }) => {
         headers.push(request.headers.get('X-Requested-With'))
         server.use(meAs(null))

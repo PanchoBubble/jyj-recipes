@@ -3,6 +3,7 @@ import { LogOut, Monitor, Moon, Sun, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useLogout, useMe } from '@/features/auth/api'
+import { MealSlotsSection } from '@/features/settings/MealSlotsSection'
 import { setThemePreference, useThemePreference, type ThemePreference } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
@@ -47,6 +48,8 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <MealSlotsSection />
 
       <Card>
         <CardHeader>
