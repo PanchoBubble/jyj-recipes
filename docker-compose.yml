@@ -81,8 +81,8 @@ services:
       JYJ_DNS_PROVIDER: ${JYJ_DNS_PROVIDER:-}
       JYJ_DNS_API_TOKEN: ${JYJ_DNS_API_TOKEN:-}
     ports:
-      - "${WEB_BIND:-0.0.0.0}:80:80"
-      - "${WEB_BIND:-0.0.0.0}:443:443"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_HTTP_PORT:-80}:80"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_HTTPS_PORT:-443}:443"
     volumes:
       - photos:/srv/media:ro
       # /data holds Caddy's internal root CA; losing it means reinstalling the CA on every device.
