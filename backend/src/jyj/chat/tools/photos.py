@@ -28,8 +28,12 @@ class SetRecipePhotoArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     recipe_id: Id
-    provider: Literal["pexels"]
-    photo_id: Id = Field(description="A photo id from find_recipe_photos.")
+    provider: Literal["pexels", "openverse"] = Field(
+        description="The provider of the photo, as returned by find_recipe_photos."
+    )
+    photo_id: str = Field(
+        min_length=1, max_length=64, description="A photo id from find_recipe_photos."
+    )
 
 
 def find_recipe_photos(ctx: ToolContext, args: FindRecipePhotosArgs) -> dict:
@@ -38,16 +42,18 @@ def find_recipe_photos(ctx: ToolContext, args: FindRecipePhotosArgs) -> dict:
         recipe = recipes_service.get_recipe(ctx.db, args.recipe_id)
     page = image_search.search(ctx.user.id, args.query, per_page=RESULTS_MAX)
     return {
-        "provider": image_search.PROVIDER,
+        "provider": page.provider,
         "query": page.query,
         "recipe_id": recipe.id if recipe else None,
         "recipe_name": recipe.name if recipe else None,
         "has_photo": bool(recipe and recipe.photo_path),
         "photos": [
             {
+                "provider": p.provider,
                 "id": p.id,
                 "alt": p.alt[:ALT_MAX],
                 "photographer": p.photographer,
+                "license": p.license,
                 "thumb_url": p.thumb_url,
             }
             for p in page.results[:RESULTS_MAX]
@@ -77,8 +83,10 @@ def set_recipe_photo(ctx: ToolContext, args: SetRecipePhotoArgs) -> dict:
     return {
         "recipe_id": recipe.id,
         "name": recipe.name,
+        "provider": args.provider,
         "photo_id": args.photo_id,
         "photographer": credit.get("photographer"),
+        "license": credit.get("license"),
     }
 
 
@@ -86,8 +94,9 @@ TOOLS = (
     Tool(
         name="find_recipe_photos",
         description=(
-            "Search stock photos (Pexels) for a recipe. Returns up to 6 photo ids with "
-            "descriptions; the user sees them as thumbnails."
+            "Search free photos (Openverse, or Pexels when configured) for a recipe. Returns "
+            "up to 6 photos with provider, id and description; the user sees them as "
+            "thumbnails. Pass provider and id unchanged to set_recipe_photo."
         ),
         args_model=FindRecipePhotosArgs,
         kind="read",

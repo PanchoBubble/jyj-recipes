@@ -82,3 +82,19 @@ def test_rejects_unknown_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValidationError):
         make_settings()
+
+
+def test_photo_search_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("PHOTO_SEARCH_PROVIDER", "PHOTO_SEARCH_TIMEOUT_SECONDS", "PEXELS_TIMEOUT_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+    assert make_settings().photo_search_provider == "auto"
+
+    monkeypatch.setenv("PHOTO_SEARCH_PROVIDER", "openverse")
+    monkeypatch.setenv("PEXELS_TIMEOUT_SECONDS", "7")
+    settings = make_settings()
+    assert settings.photo_search_provider == "openverse"
+    assert settings.photo_search_timeout_seconds == 7
+
+    monkeypatch.setenv("PHOTO_SEARCH_PROVIDER", "unsplash")
+    with pytest.raises(ValidationError):
+        make_settings()

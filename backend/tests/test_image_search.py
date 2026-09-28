@@ -69,6 +69,7 @@ class FakePexels:
         self.photos: dict[int, dict] = {101: pexels_photo(101)}
         self.images: dict[str, httpx2.Response] = {}
         self.api_status = 200
+        self.openverse = None
 
     def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(request)
@@ -84,6 +85,8 @@ class FakePexels:
             if photo_id not in self.photos:
                 return httpx2.Response(404, json={"error": "not found"})
             return httpx2.Response(200, json=self.photos[photo_id])
+        if url.host == "api.openverse.org" and self.openverse is not None:
+            return self.openverse.handler(request)
         response = self.images.get(str(url))
         if response is not None:
             return response
@@ -129,7 +132,12 @@ def test_search_maps_results_and_sends_key(fake: FakePexels) -> None:
         "page_url": "https://www.pexels.com/photo/tortilla-101/",
         "thumb_url": f"{CDN}/101/medium.jpeg",
         "preview_url": f"{CDN}/101/large.jpeg",
+        "provider": "pexels",
+        "title": None,
+        "license": None,
+        "license_url": None,
     }
+    assert page.provider == "pexels"
     (request,) = fake.requests
     assert request.headers["authorization"] == KEY
     assert request.url.params["query"] == "tortilla de patatas"
@@ -180,15 +188,24 @@ def test_rate_limit_is_per_user(fake: FakePexels) -> None:
     search.search(2, "c")
 
 
-def test_missing_key_disables_search(fake: FakePexels) -> None:
+def test_forced_pexels_without_key_is_unavailable(fake: FakePexels) -> None:
     for key in (None, "", "   "):
-        search = make_search(fake, key=key)
+        search = make_search(fake, key=key, provider="pexels")
         assert not search.configured
         with pytest.raises(PhotoSearchUnavailable, match="isn't configured"):
             search.search(1, "tortilla")
         with pytest.raises(PhotoSearchUnavailable):
-            search.download(1, 101)
+            search.download(1, "pexels", 101)
     assert fake.requests == []
+
+
+def test_auto_without_key_uses_openverse(fake: FakePexels) -> None:
+    for key in (None, "", "   "):
+        search = make_search(fake, key=key)
+        assert search.default == "openverse"
+        assert search.configured
+        with pytest.raises(PhotoSearchUnavailable):
+            search.download(1, "pexels", 101)
 
 
 def test_blank_query_is_invalid(fake: FakePexels) -> None:
@@ -196,7 +213,15 @@ def test_blank_query_is_invalid(fake: FakePexels) -> None:
         make_search(fake).search(1, "   ")
 
 
-@pytest.mark.parametrize("status", [401, 429, 500, 503])
+def test_upstream_throttle_is_429(fake: FakePexels) -> None:
+    fake.api_status = 429
+    with pytest.raises(PhotoSearchRateLimited) as exc:
+        make_search(fake).search(1, "tortilla")
+    assert exc.value.status == 429
+    assert "upstream says no" not in exc.value.detail
+
+
+@pytest.mark.parametrize("status", [401, 500, 503])
 def test_upstream_errors_are_sanitized(fake: FakePexels, status: int) -> None:
     fake.api_status = status
     with pytest.raises(PhotoSearchFailed) as exc:
@@ -237,7 +262,7 @@ def test_key_is_never_logged(fake: FakePexels, caplog: pytest.LogCaptureFixture)
 
 
 def test_download_refetches_metadata_and_uses_large2x(fake: FakePexels) -> None:
-    photo, data = make_search(fake).download(1, 101)
+    photo, data = make_search(fake).download(1, "pexels", 101)
     assert photo.id == 101
     assert data.startswith(b"\xff\xd8\xff")
     assert [str(r.url) for r in fake.requests] == [
@@ -250,7 +275,7 @@ def test_download_refetches_metadata_and_uses_large2x(fake: FakePexels) -> None:
 
 def test_download_falls_back_to_original(fake: FakePexels) -> None:
     fake.photos[101]["src"]["large2x"] = "https://evil.example/large2x.jpeg"
-    make_search(fake).download(1, 101)
+    make_search(fake).download(1, "pexels", 101)
     assert str(fake.requests[-1].url) == f"{CDN}/101/original.jpeg"
 
 
@@ -268,7 +293,7 @@ def test_download_falls_back_to_original(fake: FakePexels) -> None:
 def test_download_rejects_non_pexels_hosts(fake: FakePexels, url: str) -> None:
     fake.photos[101]["src"].update(large2x=url, original=url)
     with pytest.raises(PhotoSearchFailed):
-        make_search(fake).download(1, 101)
+        make_search(fake).download(1, "pexels", 101)
     assert all(r.url.host in {"api.pexels.com"} for r in fake.requests)
 
 
@@ -276,8 +301,8 @@ def test_download_rejects_redirect_to_another_host(fake: FakePexels) -> None:
     fake.images[f"{CDN}/101/large2x.jpeg"] = httpx2.Response(
         302, headers={"location": "https://evil.example/steal.jpeg"}
     )
-    with pytest.raises(PhotoSearchFailed, match="Pexels CDN"):
-        make_search(fake).download(1, 101)
+    with pytest.raises(PhotoSearchFailed, match="could not be downloaded"):
+        make_search(fake).download(1, "pexels", 101)
     assert "evil.example" not in {r.url.host for r in fake.requests}
 
 
@@ -285,7 +310,7 @@ def test_download_follows_redirect_within_cdn(fake: FakePexels) -> None:
     fake.images[f"{CDN}/101/large2x.jpeg"] = httpx2.Response(
         301, headers={"location": "/photos/101/moved.jpeg"}
     )
-    _, data = make_search(fake).download(1, 101)
+    _, data = make_search(fake).download(1, "pexels", 101)
     assert data.startswith(b"\xff\xd8\xff")
     assert str(fake.requests[-1].url) == f"{CDN}/101/moved.jpeg"
 
@@ -295,7 +320,7 @@ def test_download_stops_redirect_loops(fake: FakePexels) -> None:
         302, headers={"location": f"{CDN}/101/large2x.jpeg"}
     )
     with pytest.raises(PhotoSearchFailed):
-        make_search(fake).download(1, 101)
+        make_search(fake).download(1, "pexels", 101)
     assert len(fake.requests) == 1 + image_search.MAX_REDIRECTS + 1
 
 
@@ -306,7 +331,7 @@ def test_download_caps_size_while_streaming(fake: FakePexels) -> None:
 
     fake.images[f"{CDN}/101/large2x.jpeg"] = httpx2.Response(200, content=chunks())
     with pytest.raises(PhotoTooLarge):
-        make_search(fake, max_download_bytes=1024 * 1024).download(1, 101)
+        make_search(fake, max_download_bytes=1024 * 1024).download(1, "pexels", 101)
 
 
 def test_download_rejects_declared_oversize(fake: FakePexels) -> None:
@@ -314,18 +339,18 @@ def test_download_rejects_declared_oversize(fake: FakePexels) -> None:
         200, content=b"x" * 10, headers={"content-length": str(50 * 1024 * 1024)}
     )
     with pytest.raises(PhotoTooLarge):
-        make_search(fake).download(1, 101)
+        make_search(fake).download(1, "pexels", 101)
 
 
 def test_download_of_unknown_photo_is_not_found(fake: FakePexels) -> None:
     with pytest.raises(NotFoundError):
-        make_search(fake).download(1, 999)
+        make_search(fake).download(1, "pexels", 999)
 
 
 def test_download_rejects_mismatched_id(fake: FakePexels) -> None:
     fake.photos[101] = pexels_photo(555)
     with pytest.raises(PhotoSearchFailed):
-        make_search(fake).download(1, 101)
+        make_search(fake).download(1, "pexels", 101)
 
 
 # --- API ---------------------------------------------------------------------------------
@@ -436,7 +461,10 @@ def test_search_endpoint_validates_query(client: TestClient) -> None:
     assert_problem(client.get(f"{API}/images/search", params={"q": "a", "page": 0}), 422)
 
 
-def test_search_endpoint_unconfigured_is_503(client: TestClient, configure) -> None:
+def test_search_endpoint_forced_pexels_without_key_is_503(
+    client: TestClient, configure, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PHOTO_SEARCH_PROVIDER", "pexels")
     configure(None)
     body = assert_problem(client.get(f"{API}/images/search", params={"q": "tortilla"}), 503)
     assert body["detail"] == "photo search isn't configured"
@@ -473,6 +501,9 @@ def test_import_stores_photo_and_credit(
         "photographer": "Ana Cook",
         "photographer_url": "https://www.pexels.com/@ana",
         "page_url": "https://www.pexels.com/photo/tortilla-101/",
+        "title": None,
+        "license": None,
+        "license_url": None,
     }
     fetched = client.get(f"{API}/recipes/{recipe['id']}").json()
     assert fetched["photo_credit"] == body["photo_credit"]
@@ -535,7 +566,7 @@ def test_import_needs_csrf_header_and_login(
     assert fake.api_calls() == []
 
 
-def test_import_unconfigured_is_503(client: TestClient, recipe: dict, configure) -> None:
+def test_import_pexels_without_key_is_503(client: TestClient, recipe: dict, configure) -> None:
     configure(None)
     assert_problem(from_search(client, recipe["id"]), 503)
 

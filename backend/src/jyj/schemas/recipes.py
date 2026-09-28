@@ -93,10 +93,13 @@ class RecipeIngredientOut(BaseModel):
 
 
 class PhotoCreditOut(BaseModel):
-    provider: Literal["pexels"]
+    provider: Literal["pexels", "openverse"]
     photographer: str
     photographer_url: str | None
     page_url: str | None
+    title: str | None = None
+    license: str | None = None
+    license_url: str | None = None
 
     @classmethod
     def build(cls, raw: object) -> Self | None:

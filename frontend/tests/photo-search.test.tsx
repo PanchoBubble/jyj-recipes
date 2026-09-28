@@ -5,7 +5,6 @@ import { http, HttpResponse } from 'msw'
 import { actionLink, toolLabel } from '@/features/chat/actions'
 import type { ActionOut, ChatAction, ConversationDetail } from '@/features/chat/api'
 import type { PhotoCredit, Recipe } from '@/features/recipes/api'
-import { resetPhotoSearchAvailability } from '@/features/recipes/photoSearch'
 
 import { renderApp } from './render'
 import { API, alice, calendarBackdrop, meAs, problem, server } from './server'
@@ -56,6 +55,41 @@ function result(id: number, photographer = 'Ana Cook') {
     page_url: `https://www.pexels.com/photo/pancakes-${id}/`,
     thumb_url: `${CDN}/${id}/medium.jpeg`,
     preview_url: `${CDN}/${id}/large.jpeg`,
+    provider: 'pexels' as const,
+    title: null,
+    license: null,
+    license_url: null,
+  }
+}
+
+const OV_ID = 'd5f163e9-73a2-4fc8-8033-515f4380c930'
+const OV_THUMB = `/api/v1/images/thumb?provider=openverse&id=${OV_ID}`
+
+const openverseCredit: PhotoCredit = {
+  provider: 'openverse',
+  photographer: 'Rod Waddington',
+  photographer_url: 'https://www.flickr.com/photos/rod',
+  page_url: 'https://www.flickr.com/photos/rod/509',
+  title: 'Pancake stack',
+  license: 'CC BY-SA 2.0',
+  license_url: 'https://creativecommons.org/licenses/by-sa/2.0/',
+}
+
+const withOpenversePhoto = recipe({
+  photo_url: '/media/ov.webp',
+  photo_thumb_url: '/media/ov_thumb.webp',
+  photo_credit: openverseCredit,
+})
+
+function openverseResult() {
+  return {
+    ...openverseCredit,
+    id: OV_ID,
+    alt: 'Pancake stack',
+    width: 1024,
+    height: 683,
+    thumb_url: OV_THUMB,
+    preview_url: OV_THUMB,
   }
 }
 
@@ -91,7 +125,6 @@ function serveUse(respond: () => Response | Promise<Response>) {
 }
 
 beforeEach(() => {
-  resetPhotoSearchAvailability()
   server.use(meAs(alice), ...calendarBackdrop())
 })
 
@@ -182,21 +215,50 @@ describe('photo search picker', () => {
     expect(within(preview).getByRole('button', { name: 'Use this photo' })).toBeEnabled()
   })
 
-  it('explains when photo search is not configured and hides the button', async () => {
+  it('searches Openverse, shows the license and uses the photo by its id', async () => {
     serveRecipe(recipe())
-    serveSearch(() => problem(503, 'Service Unavailable', "photo search isn't configured"))
+    serveSearch((q, page) =>
+      HttpResponse.json({ provider: 'openverse', query: q, page, has_more: false, results: [openverseResult()] }),
+    )
+    const uses = serveUse(() => HttpResponse.json(withOpenversePhoto))
     const user = userEvent.setup()
     renderApp('/recipes/7')
 
     await user.click(await screen.findByRole('button', { name: 'Find a photo' }))
     const sheet = await screen.findByRole('dialog', { name: 'Find a photo' })
-    expect(await within(sheet).findByRole('alert')).toHaveTextContent(
-      "Photo search isn't set up on this server. Add a Pexels API key to turn it on.",
+    const grid = await within(sheet).findByRole('list', { name: 'Photo results' })
+    expect(within(grid).getByRole('img')).toHaveAttribute('src', OV_THUMB)
+    expect(within(sheet).getByText(/Photos via/)).toHaveTextContent('Photos via Openverse')
+
+    await user.click(within(sheet).getByRole('button', { name: /Preview photo by Rod Waddington/ }))
+    const preview = await screen.findByRole('dialog', { name: 'Preview' })
+    expect(within(preview).getByLabelText('License: CC BY-SA 2.0')).toHaveTextContent('CC BY-SA 2.0')
+    expect(within(preview).getByText('via Openverse')).toBeInTheDocument()
+    expect(within(preview).getByText(/Photo:/)).toHaveTextContent('Photo: Pancake stack by Rod Waddington, CC BY-SA 2.0')
+    expect(within(preview).getByRole('link', { name: 'CC BY-SA 2.0' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by-sa/2.0/',
     )
+
+    await user.click(within(preview).getByRole('button', { name: 'Use this photo' }))
+    await waitFor(() => expect(uses).toHaveLength(1))
+    expect(uses[0].body).toEqual({ provider: 'openverse', photo_id: OV_ID })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Preview' })).not.toBeInTheDocument())
+    expect(await screen.findByText(/Photo:/)).toHaveTextContent('Photo: Pancake stack by Rod Waddington, CC BY-SA 2.0')
+  })
+
+  it('keeps photo search available after an unavailable answer', async () => {
+    serveRecipe(recipe())
+    serveSearch(() => problem(503, 'Service Unavailable', 'photo search is unavailable right now'))
+    const user = userEvent.setup()
+    renderApp('/recipes/7')
+
+    await user.click(await screen.findByRole('button', { name: 'Find a photo' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Find a photo' })
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent('photo search is unavailable right now')
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(screen.queryByRole('button', { name: 'Find a photo' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Choose photo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Find a photo' })).toBeInTheDocument()
   })
 
   it('shows search errors', async () => {
@@ -219,6 +281,20 @@ describe('photo credit', () => {
     expect(await screen.findByRole('img', { name: 'Pancakes' })).toBeInTheDocument()
     expect(screen.getByText(/Photo by/)).toHaveTextContent('Photo by Ana Cook on Pexels')
     expect(screen.getByRole('link', { name: 'Ana Cook' })).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
+  it('shows the Openverse title, creator and license under the recipe photo', async () => {
+    serveRecipe(withOpenversePhoto)
+    renderApp('/recipes/7')
+
+    expect(await screen.findByRole('img', { name: 'Pancakes' })).toBeInTheDocument()
+    expect(screen.getByText(/Photo:/)).toHaveTextContent('Photo: Pancake stack by Rod Waddington, CC BY-SA 2.0')
+    expect(screen.getByRole('link', { name: 'Pancake stack' })).toHaveAttribute(
+      'href',
+      'https://www.flickr.com/photos/rod/509',
+    )
+    expect(screen.getByRole('link', { name: 'Rod Waddington' })).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.queryByText(/on Pexels/)).not.toBeInTheDocument()
   })
 
   it('shows no credit for own uploads', async () => {
@@ -317,6 +393,33 @@ describe('chat photo card', () => {
     await user.click(replace)
     await waitFor(() => expect(uses).toHaveLength(1))
     expect(uses[0].body).toEqual({ provider: 'pexels', photo_id: 101 })
+  })
+
+  it('shows Openverse results from the thumbnail proxy and uses them by id', async () => {
+    serveChat([
+      photosAction({
+        provider: 'openverse',
+        photos: [
+          { provider: 'openverse', id: OV_ID, alt: 'Stack', photographer: 'Rod', license: 'CC BY 4.0', thumb_url: OV_THUMB },
+          { provider: 'openverse', id: 'x', alt: 'Direct', photographer: 'Eve', thumb_url: 'https://live.staticflickr.com/x.jpg' },
+          { provider: 'openverse', id: 'y', alt: 'Cdn', photographer: 'Mal', thumb_url: `${CDN}/1/medium.jpeg` },
+        ],
+      }),
+    ])
+    const uses = serveUse(() => HttpResponse.json(withOpenversePhoto))
+    const user = userEvent.setup()
+    renderApp('/chat/7')
+
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    const card = await within(panel).findByRole('article', { name: /Found photos/ })
+    const thumbs = within(card).getAllByRole('img')
+    expect(thumbs.map((t) => t.getAttribute('src'))).toEqual([OV_THUMB])
+    expect(within(card).getByText('Rod · CC BY 4.0')).toBeInTheDocument()
+    expect(within(card).getByText(/Photos via/)).toHaveTextContent('Photos via Openverse')
+
+    await user.click(within(card).getByRole('button', { name: 'Use photo by Rod' }))
+    await waitFor(() => expect(uses).toHaveLength(1))
+    expect(uses[0].body).toEqual({ provider: 'openverse', photo_id: OV_ID })
   })
 
   it('has no Use buttons when the search was not for a recipe', async () => {

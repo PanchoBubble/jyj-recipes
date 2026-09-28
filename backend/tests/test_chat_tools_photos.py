@@ -74,7 +74,7 @@ def recipe(ctx: ToolContext) -> Recipe:
     return recipes_service.create_recipe(ctx.db, ctx.user, StockSource.UI, name="Tortilla")
 
 
-def set_args(recipe: Recipe, photo_id: int = 101) -> dict:
+def set_args(recipe: Recipe, photo_id: str = "101") -> dict:
     return {"recipe_id": recipe.id, "provider": "pexels", "photo_id": photo_id}
 
 
@@ -101,7 +101,15 @@ def test_find_recipe_photos_returns_compact_results(
     assert data["recipe_name"] == "Tortilla"
     assert data["has_photo"] is False
     assert len(data["photos"]) == 6
-    assert set(data["photos"][0]) == {"id", "alt", "photographer", "thumb_url"}
+    assert data["provider"] == "pexels"
+    assert set(data["photos"][0]) == {
+        "provider",
+        "id",
+        "alt",
+        "photographer",
+        "license",
+        "thumb_url",
+    }
     assert fake.requests[0].url.params["per_page"] == "6"
 
 
@@ -113,10 +121,11 @@ def test_find_recipe_photos_without_recipe(
     assert result.data["recipe_id"] is None
 
 
-def test_find_recipe_photos_unconfigured_is_rejected(
+def test_find_recipe_photos_forced_pexels_without_key_is_rejected(
     registry: Registry, ctx: ToolContext, fake: FakePexels, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PEXELS_API_KEY", "")
+    monkeypatch.setenv("PHOTO_SEARCH_PROVIDER", "pexels")
     get_settings.cache_clear()
     image_search.get_image_search.cache_clear()
     result = registry.execute("find_recipe_photos", {"query": "paella"}, ctx)
@@ -133,8 +142,10 @@ def test_set_recipe_photo_runs_directly_without_existing_photo(
     assert result.data == {
         "recipe_id": recipe.id,
         "name": "Tortilla",
-        "photo_id": 101,
+        "provider": "pexels",
+        "photo_id": "101",
         "photographer": "Ana Cook",
+        "license": None,
     }
     ctx.db.refresh(recipe)
     assert recipe.photo_path is not None
@@ -165,11 +176,11 @@ def test_set_recipe_photo_unknown_recipe_or_photo(
     registry: Registry, ctx: ToolContext, recipe: Recipe, fake: FakePexels
 ) -> None:
     missing = registry.execute(
-        "set_recipe_photo", {"recipe_id": 999_999, "provider": "pexels", "photo_id": 101}, ctx
+        "set_recipe_photo", {"recipe_id": 999_999, "provider": "pexels", "photo_id": "101"}, ctx
     )
     assert missing.status is ToolStatus.REJECTED
     assert missing.error["code"] == "not_found"
-    gone = registry.execute("set_recipe_photo", set_args(recipe, photo_id=999), ctx)
+    gone = registry.execute("set_recipe_photo", set_args(recipe, photo_id="999"), ctx)
     assert gone.error["code"] == "not_found"
 
 

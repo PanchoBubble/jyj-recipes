@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, ExternalLink, Search, X } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -12,10 +12,10 @@ import {
 } from '@/components/ui/drawer'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Recipe } from '@/features/recipes/api'
+import type { PhotoCredit as Credit, Recipe } from '@/features/recipes/api'
 import {
   PHOTO_QUERY_MAX,
-  isNotConfigured,
+  PROVIDER_NAMES,
   photoSearchErrorMessage,
   usePhotoSearch,
   useSetPhotoFromSearch,
@@ -29,7 +29,10 @@ interface PhotoSearchSheetProps {
   onOpenChange: (open: boolean) => void
 }
 
-/** Search Pexels for a recipe photo; thumbnails load straight from the Pexels CDN. */
+/**
+ * Search free photos for a recipe. Openverse thumbnails come through our own API; Pexels
+ * thumbnails load straight from the Pexels CDN.
+ */
 export function PhotoSearchSheet({ recipe, open, onOpenChange }: PhotoSearchSheetProps) {
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -47,10 +50,11 @@ function SheetBody({ recipe, onDone }: { recipe: Recipe; onDone: () => void }) {
   const results = usePhotoSearch(search)
   const use = useSetPhotoFromSearch()
   const photos = dedupe(results.data?.pages.flatMap((p) => p.results) ?? [])
+  const provider = results.data?.pages[0]?.provider
 
   const onUse = (photo: PhotoSearchResult) =>
     use.mutate(
-      { recipeId: recipe.id, photoId: photo.id },
+      { recipeId: recipe.id, provider: photo.provider, photoId: photo.id },
       {
         onSuccess: () => {
           toast.success('Photo saved')
@@ -77,7 +81,7 @@ function SheetBody({ recipe, onDone }: { recipe: Recipe; onDone: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col pb-[env(safe-area-inset-bottom)]">
       <DrawerHeader className="text-left group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
         <DrawerTitle className="text-lg">Find a photo</DrawerTitle>
-        <DrawerDescription>Free photos from Pexels for {recipe.name}.</DrawerDescription>
+        <DrawerDescription>Free photos for {recipe.name}.</DrawerDescription>
       </DrawerHeader>
       <div className="relative px-4 pb-2">
         <Search
@@ -114,14 +118,7 @@ function SheetBody({ recipe, onDone }: { recipe: Recipe; onDone: () => void }) {
             ))}
           </div>
         ) : results.isError ? (
-          <p
-            role="alert"
-            className={
-              isNotConfigured(results.error)
-                ? 'py-3 text-sm text-muted-foreground'
-                : 'py-3 text-sm text-destructive'
-            }
-          >
+          <p role="alert" className="py-3 text-sm text-destructive">
             {photoSearchErrorMessage(results.error)}
           </p>
         ) : photos.length === 0 ? (
@@ -129,7 +126,7 @@ function SheetBody({ recipe, onDone }: { recipe: Recipe; onDone: () => void }) {
         ) : (
           <ul aria-label="Photo results" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {photos.map((photo) => (
-              <li key={photo.id}>
+              <li key={photoKey(photo)}>
                 <button
                   type="button"
                   aria-label={`Preview photo by ${photo.photographer}${photo.alt ? `: ${photo.alt}` : ''}`}
@@ -159,16 +156,16 @@ function SheetBody({ recipe, onDone }: { recipe: Recipe; onDone: () => void }) {
             {results.isFetchingNextPage ? 'Loading…' : 'Load more'}
           </Button>
         )}
-        {photos.length > 0 && (
+        {photos.length > 0 && provider && (
           <p className="mt-3 text-xs text-muted-foreground">
-            Photos provided by{' '}
+            Photos via{' '}
             <a
-              href="https://www.pexels.com"
+              href={PROVIDER_HOMES[provider]}
               target="_blank"
               rel="noopener noreferrer"
               className="underline underline-offset-2"
             >
-              Pexels
+              {PROVIDER_NAMES[provider]}
             </a>
           </p>
         )}
@@ -206,7 +203,9 @@ function Preview({
         </Button>
         <div className="min-w-0">
           <DrawerTitle className="text-lg">Preview</DrawerTitle>
-          <DrawerDescription className="truncate">{photo.alt || 'Pexels photo'}</DrawerDescription>
+          <DrawerDescription className="truncate">
+            {photo.alt || `${PROVIDER_NAMES[photo.provider]} photo`}
+          </DrawerDescription>
         </div>
       </DrawerHeader>
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted">
@@ -230,11 +229,18 @@ function Preview({
           </div>
         )}
       </div>
-      <PhotoCredit
-        photographer={photo.photographer}
-        photographerUrl={photo.photographer_url}
-        pageUrl={photo.page_url}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        {photo.license && (
+          <span
+            aria-label={`License: ${photo.license}`}
+            className="rounded-full border px-2 py-0.5 text-xs font-medium"
+          >
+            {photo.license}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">via {PROVIDER_NAMES[photo.provider]}</span>
+      </div>
+      <PhotoCredit credit={photo} />
       {replaces && <p className="text-sm text-muted-foreground">This replaces the current photo.</p>}
       <Button type="button" className="h-11" disabled={saving} onClick={onUse}>
         <Check aria-hidden /> {saving ? 'Saving…' : 'Use this photo'}
@@ -243,35 +249,67 @@ function Preview({
   )
 }
 
-/** Pexels asks for "Photo by <photographer> on Pexels" with links back. */
+const PROVIDER_HOMES = {
+  pexels: 'https://www.pexels.com',
+  openverse: 'https://openverse.org',
+} as const
+
+type CreditFields = Pick<
+  Credit,
+  'provider' | 'photographer' | 'photographer_url' | 'page_url' | 'title' | 'license' | 'license_url'
+>
+
+const creditLink = 'underline underline-offset-2 hover:text-foreground'
+
+function MaybeLink({ href, children }: { href: string | null | undefined; children: ReactNode }) {
+  if (!href) return <>{children}</>
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={creditLink}>
+      {children}
+    </a>
+  )
+}
+
+/**
+ * Pexels asks for "Photo by <photographer> on Pexels"; Creative Commons attribution wants the
+ * title, creator, license and links to the source and the license.
+ */
 export function PhotoCredit({
-  photographer,
-  photographerUrl,
-  pageUrl,
+  credit,
   className = 'text-xs text-muted-foreground',
 }: {
-  photographer: string
-  photographerUrl: string | null
-  pageUrl: string | null
+  credit: CreditFields
   className?: string
 }) {
-  const link = 'underline underline-offset-2 hover:text-foreground'
+  const creator = <MaybeLink href={credit.photographer_url}>{credit.photographer}</MaybeLink>
+  if (credit.provider === 'openverse') {
+    return (
+      <p className={className}>
+        {credit.title ? (
+          <>
+            Photo: <MaybeLink href={credit.page_url}>{credit.title}</MaybeLink> by {creator}
+          </>
+        ) : (
+          <>
+            <MaybeLink href={credit.page_url}>Photo</MaybeLink> by {creator}
+          </>
+        )}
+        {credit.license && (
+          <>
+            , <MaybeLink href={credit.license_url}>{credit.license}</MaybeLink>
+          </>
+        )}
+      </p>
+    )
+  }
   return (
     <p className={className}>
-      Photo by{' '}
-      {photographerUrl ? (
-        <a href={photographerUrl} target="_blank" rel="noopener noreferrer" className={link}>
-          {photographer}
-        </a>
-      ) : (
-        photographer
-      )}{' '}
-      on{' '}
+      Photo by {creator} on{' '}
       <a
-        href={pageUrl ?? 'https://www.pexels.com'}
+        href={credit.page_url ?? PROVIDER_HOMES.pexels}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${link} inline-flex items-center gap-0.5`}
+        className={`${creditLink} inline-flex items-center gap-0.5`}
       >
         Pexels
         <ExternalLink className="size-3" aria-hidden />
@@ -280,7 +318,14 @@ export function PhotoCredit({
   )
 }
 
+function photoKey(photo: Pick<PhotoSearchResult, 'provider' | 'id'>) {
+  return `${photo.provider}:${photo.id}`
+}
+
 function dedupe(photos: PhotoSearchResult[]) {
-  const seen = new Set<number>()
-  return photos.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)))
+  const seen = new Set<string>()
+  return photos.filter((p) => {
+    const key = photoKey(p)
+    return seen.has(key) ? false : (seen.add(key), true)
+  })
 }

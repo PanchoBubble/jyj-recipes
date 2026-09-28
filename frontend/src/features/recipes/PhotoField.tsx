@@ -15,7 +15,6 @@ import {
 import { Button } from '@/components/ui/button'
 import type { Recipe } from '@/features/recipes/api'
 import { photoErrorMessage, useRemoveRecipePhoto, useUploadRecipePhoto } from '@/features/recipes/photo'
-import { usePhotoSearchAvailable } from '@/features/recipes/photoSearch'
 import { PhotoCredit, PhotoSearchSheet } from '@/features/recipes/PhotoSearchSheet'
 import { RecipePhoto } from '@/features/recipes/RecipePhoto'
 
@@ -44,7 +43,6 @@ export function PhotoField(props: Props) {
   const [ownPending, setOwnPending] = useState<File | null>(null)
   const [ownProgress, setOwnProgress] = useState<number | null>(null)
   const [searching, setSearching] = useState(false)
-  const searchAvailable = usePhotoSearchAvailable()
 
   const recipe = props.recipe
   const pending = recipe ? ownPending : props.pending
@@ -105,11 +103,7 @@ export function PhotoField(props: Props) {
         {busy && <UploadProgress value={progress} />}
       </div>
       {!pending && recipe?.photo_url && recipe.photo_credit && (
-        <PhotoCredit
-          photographer={recipe.photo_credit.photographer}
-          photographerUrl={recipe.photo_credit.photographer_url}
-          pageUrl={recipe.photo_credit.page_url}
-        />
+        <PhotoCredit credit={recipe.photo_credit} />
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -158,7 +152,7 @@ export function PhotoField(props: Props) {
             >
               <Camera aria-hidden /> Take photo
             </Button>
-            {recipe && searchAvailable && (
+            {recipe && (
               <Button
                 type="button"
                 variant="outline"

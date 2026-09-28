@@ -18,11 +18,17 @@ export const SERVINGS_MAX = 100
 export const LINES_MAX = 100
 export const INGREDIENT_NAME_MAX = 100
 
+export type PhotoProvider = 'pexels' | 'openverse'
+
 export interface PhotoCredit {
-  provider: 'pexels'
+  provider: PhotoProvider
   photographer: string
   photographer_url: string | null
   page_url: string | null
+  /** Openverse only: the work's title and its Creative Commons license. */
+  title?: string | null
+  license?: string | null
+  license_url?: string | null
 }
 
 export interface RecipeSummary {

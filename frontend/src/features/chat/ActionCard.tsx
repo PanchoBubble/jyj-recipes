@@ -6,7 +6,8 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { photoSearchErrorMessage, useSetPhotoFromSearch } from '@/features/recipes/photoSearch'
+import type { PhotoProvider } from '@/features/recipes/api'
+import { PROVIDER_NAMES, photoSearchErrorMessage, useSetPhotoFromSearch } from '@/features/recipes/photoSearch'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -122,23 +123,49 @@ function StatusIcon({ status }: { status: ChatAction['status'] }) {
 }
 
 interface StripPhoto {
-  id: number
+  provider: PhotoProvider
+  id: number | string
   alt: string
   photographer: string
+  license: string | null
   thumb_url: string
+}
+
+// Thumbnails only load from where each provider serves them: Pexels' CDN or our own proxy.
+const THUMB_PREFIXES: Record<PhotoProvider, string> = {
+  pexels: 'https://images.pexels.com/',
+  openverse: '/api/v1/images/thumb?',
+}
+
+function isProvider(value: unknown): value is PhotoProvider {
+  return value === 'pexels' || value === 'openverse'
 }
 
 function stripPhotos(data: ChatAction['data']): StripPhoto[] {
   const raw = data?.photos
   if (!Array.isArray(raw)) return []
-  return raw.filter(
-    (p): p is StripPhoto =>
-      typeof p === 'object' &&
-      p !== null &&
-      typeof p.id === 'number' &&
-      typeof p.thumb_url === 'string' &&
-      p.thumb_url.startsWith('https://images.pexels.com/'),
-  )
+  const fallback = isProvider(data?.provider) ? data.provider : 'pexels'
+  return raw.flatMap((p): StripPhoto[] => {
+    if (typeof p !== 'object' || p === null) return []
+    const provider: PhotoProvider = isProvider(p.provider) ? p.provider : fallback
+    const idOk = typeof p.id === 'number' || (typeof p.id === 'string' && p.id.length > 0)
+    const thumbOk = typeof p.thumb_url === 'string' && p.thumb_url.startsWith(THUMB_PREFIXES[provider])
+    if (!idOk || !thumbOk) return []
+    return [
+      {
+        provider,
+        id: p.id,
+        alt: typeof p.alt === 'string' ? p.alt : '',
+        photographer: typeof p.photographer === 'string' ? p.photographer : 'Unknown',
+        license: typeof p.license === 'string' ? p.license : null,
+        thumb_url: p.thumb_url,
+      },
+    ]
+  })
+}
+
+function stripKey(photo: StripPhoto) {
+  return `${photo.provider}:${photo.id}`
 }
 
 /** Photo search results from the assistant; "Use" sets the photo on the referenced recipe. */
@@ -147,24 +174,27 @@ function PhotoStrip({ data }: { data: ChatAction['data'] }) {
   const recipeId = typeof data?.recipe_id === 'number' ? data.recipe_id : null
   const recipeName = typeof data?.recipe_name === 'string' ? data.recipe_name : 'the recipe'
   const [replaces, setReplaces] = useState(data?.has_photo === true)
-  const [confirming, setConfirming] = useState<number | null>(null)
-  const [used, setUsed] = useState<number | null>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [used, setUsed] = useState<string | null>(null)
   const use = useSetPhotoFromSearch()
 
   if (photos.length === 0) return <p className="text-muted-foreground">No photos found.</p>
 
+  const provider = photos[0].provider
+
   const onUse = (photo: StripPhoto) => {
     if (recipeId === null) return
-    if (replaces && confirming !== photo.id) {
-      setConfirming(photo.id)
+    const key = stripKey(photo)
+    if (replaces && confirming !== key) {
+      setConfirming(key)
       return
     }
     setConfirming(null)
     use.mutate(
-      { recipeId, photoId: photo.id },
+      { recipeId, provider: photo.provider, photoId: photo.id },
       {
         onSuccess: () => {
-          setUsed(photo.id)
+          setUsed(key)
           setReplaces(true)
           toast.success(`Photo set for ${recipeName}`)
         },
@@ -178,7 +208,7 @@ function PhotoStrip({ data }: { data: ChatAction['data'] }) {
     <div className="flex flex-col gap-1.5">
       <ul aria-label="Photo results" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {photos.map((photo) => (
-          <li key={photo.id} className="flex w-28 shrink-0 flex-col gap-1">
+          <li key={stripKey(photo)} className="flex w-28 shrink-0 flex-col gap-1">
             <img
               src={photo.thumb_url}
               alt={photo.alt || `Photo by ${photo.photographer}`}
@@ -187,35 +217,38 @@ function PhotoStrip({ data }: { data: ChatAction['data'] }) {
               referrerPolicy="no-referrer"
               className="aspect-[4/3] w-full rounded-md bg-muted object-cover"
             />
-            <span className="truncate text-xs text-muted-foreground">{photo.photographer}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {photo.photographer}
+              {photo.license && ` · ${photo.license}`}
+            </span>
             {recipeId !== null && (
               <Button
                 size="sm"
-                variant={used === photo.id ? 'secondary' : 'outline'}
+                variant={used === stripKey(photo) ? 'secondary' : 'outline'}
                 className="h-9"
                 aria-label={
-                  confirming === photo.id
+                  confirming === stripKey(photo)
                     ? `Replace the photo of ${recipeName} with the photo by ${photo.photographer}`
                     : `Use photo by ${photo.photographer}`
                 }
-                disabled={use.isPending || used === photo.id}
+                disabled={use.isPending || used === stripKey(photo)}
                 onClick={() => onUse(photo)}
               >
-                {used === photo.id ? 'In use' : confirming === photo.id ? 'Replace?' : 'Use'}
+                {used === stripKey(photo) ? 'In use' : confirming === stripKey(photo) ? 'Replace?' : 'Use'}
               </Button>
             )}
           </li>
         ))}
       </ul>
       <p className="text-xs text-muted-foreground">
-        Photos from{' '}
+        Photos via{' '}
         <a
-          href="https://www.pexels.com"
+          href={provider === 'openverse' ? 'https://openverse.org' : 'https://www.pexels.com'}
           target="_blank"
           rel="noopener noreferrer"
           className="underline underline-offset-2"
         >
-          Pexels
+          {PROVIDER_NAMES[provider]}
         </a>
         {recipeId === null && '. Ask the assistant to use one for a recipe.'}
       </p>

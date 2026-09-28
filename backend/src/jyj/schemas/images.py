@@ -1,12 +1,13 @@
-from typing import Literal, Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from jyj.services.image_search import PhotoResult, SearchPage
+from jyj.services.image_search import PhotoResult, ProviderName, SearchPage
 
 
 class PhotoSearchResultOut(BaseModel):
-    id: int
+    provider: ProviderName
+    id: int | str
     alt: str
     width: int
     height: int
@@ -15,6 +16,9 @@ class PhotoSearchResultOut(BaseModel):
     page_url: str | None
     thumb_url: str
     preview_url: str
+    title: str | None
+    license: str | None
+    license_url: str | None
 
     @classmethod
     def build(cls, photo: PhotoResult) -> Self:
@@ -22,7 +26,7 @@ class PhotoSearchResultOut(BaseModel):
 
 
 class PhotoSearchOut(BaseModel):
-    provider: Literal["pexels"] = "pexels"
+    provider: ProviderName
     query: str
     page: int
     has_more: bool
@@ -31,6 +35,7 @@ class PhotoSearchOut(BaseModel):
     @classmethod
     def build(cls, page: SearchPage) -> Self:
         return cls(
+            provider=page.provider,
             query=page.query,
             page=page.page,
             has_more=page.has_more,
@@ -41,5 +46,9 @@ class PhotoSearchOut(BaseModel):
 class PhotoFromSearchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["pexels"]
-    photo_id: int = Field(ge=1, le=2**53)
+    provider: ProviderName
+    # Pexels ids are integers, Openverse ids UUIDs; the provider validates its own.
+    photo_id: (
+        Annotated[int, Field(strict=True, ge=1, le=2**53)]
+        | Annotated[str, Field(min_length=1, max_length=64)]
+    )

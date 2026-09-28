@@ -131,8 +131,9 @@ GET    /ingredients?q=        POST /ingredients      GET|PATCH|DELETE /ingredien
 GET    /recipes?q=&page=      POST /recipes          GET|PATCH|DELETE /recipes/{id}
        body includes ingredients[] {ingredient_id | new_ingredient{name,dimension,default_unit}, amount_per_person, unit, note}
 PUT    /recipes/{id}/photo    multipart, ≤ 10 MiB, jpeg/png/webp/heic sniffed   DELETE /recipes/{id}/photo
-POST   /recipes/{id}/photo/from-search  {provider: "pexels", photo_id}; server re-fetches and downloads from images.pexels.com only
-GET    /images/search?q=&page=  Pexels search proxy; 503 when PEXELS_API_KEY is unset
+POST   /recipes/{id}/photo/from-search  {provider: "openverse"|"pexels", photo_id}; server re-fetches by id, downloads via the provider's allowlist / SSRF guard
+GET    /images/search?q=&page=  photo search proxy: Openverse (keyless) by default, Pexels when PEXELS_API_KEY is set
+GET    /images/thumb?provider=openverse&id=  Openverse thumbnail proxy (cached, size-capped)
 GET    /recipes/{id}/scaled?servings=N
 
 GET    /meal-slots            POST /meal-slots       PATCH|DELETE /meal-slots/{id}   PUT /meal-slots/order
@@ -204,7 +205,7 @@ Memory budget target (steady state): Postgres ≤ 256 MiB (`shared_buffers=64MB`
 - LAN only: Caddy binds to the LAN interface; `db` and `backend` publish no ports. No port forwarding, no tunnel.
 - Household auth (§2), session TTL 30 days sliding, logout revokes, `create-user` / `reset-password` via `docker compose exec backend jyj users ...` (no signup endpoint).
 - Login rate limiting and generic error messages.
-- Headers: CSP (`default-src 'self'`, `media-src 'self' blob:`, `img-src` adds `https://images.pexels.com` for photo search thumbnails), `Permissions-Policy: microphone=(self)`, HSTS off for tls internal (avoid lock-in), `X-Content-Type-Options`, `frame-ancestors 'none'`.
+- Headers: CSP (`default-src 'self'`, `media-src 'self' blob:`, `img-src` adds `https://images.pexels.com` for Pexels thumbnails; Openverse thumbnails are proxied and stay `'self'`), `Permissions-Policy: microphone=(self)`, HSTS off for tls internal (avoid lock-in), `X-Content-Type-Options`, `frame-ancestors 'none'`.
 - Uploads: size caps, magic-byte sniffing, re-encode images, random filenames, audio never persisted.
 - Chat: tools scoped to the service layer, schema validation, confirmation for destructive ops, audit table, no raw SQL, Codex sandbox read-only in empty dir.
 - Secrets: `.env` (DB password, session secret) git-ignored, `.env.example` committed with placeholders; Codex auth lives only in its own volume, never in the repo or `.env`.

@@ -60,17 +60,20 @@ The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj
 docker compose exec backend jyj chat purge   # --days N to override
 ```
 
-## Photo search (Pexels)
+## Photo search (Openverse, optionally Pexels)
 
-The recipe page and editor have a **Find a photo** button that searches [Pexels](https://www.pexels.com) for free stock photos, and the assistant can do the same (`find_recipe_photos`, `set_recipe_photo`). It is off until a key is set:
+The recipe page and editor have a **Find a photo** button, and the assistant can do the same (`find_recipe_photos`, `set_recipe_photo`). It works out of the box with no signup: searches go to [Openverse](https://openverse.org), which indexes openly licensed photos (Flickr, Wikimedia and others). For more consistent food photos, add a free Pexels key and Pexels is used instead:
 
 1. Get a free API key at https://www.pexels.com/api/.
-2. Put it in `.env` as `PEXELS_API_KEY=...` (never commit it; `.env` is git-ignored).
-3. Restart the backend (`make up`, or restart `make dev`).
+2. Set `PEXELS_API_KEY` in `.env` and restart the backend.
 
-Without a key, `GET /api/v1/images/search` and `POST /api/v1/recipes/{id}/photo/from-search` return 503 "photo search isn't configured" and the app hides the button. The key stays on the server: searches go through the backend (30 per user per minute by default, `PHOTO_SEARCH_RATE_LIMIT_PER_MINUTE`; results cached for 10 minutes; `PEXELS_TIMEOUT_SECONDS`, default 10). Thumbnails load straight from `images.pexels.com`, which the Caddy CSP allows in `img-src`. Using a photo sends only its Pexels id; the backend looks it up again, downloads it only from `https://images.pexels.com` (no redirects elsewhere, capped at `PHOTO_MAX_BYTES`) and runs it through the normal photo pipeline.
+`PHOTO_SEARCH_PROVIDER` picks the provider: `auto` (default: Pexels when a key is set, else Openverse), `openverse` or `pexels`. Forcing `pexels` without a key makes search answer 503 "photo search isn't configured".
 
-Pexels' [guidelines](https://www.pexels.com/api/documentation/#guidelines) ask for attribution, so an imported photo keeps its credit (`photo_credit` on recipe responses) and the recipe page shows "Photo by <photographer> on Pexels" with links back. Uploading your own photo or removing it clears the credit.
+Searches go through the backend (30 per user per minute by default, `PHOTO_SEARCH_RATE_LIMIT_PER_MINUTE`; results cached for 10 minutes; `PHOTO_SEARCH_TIMEOUT_SECONDS`, default 10, `PEXELS_TIMEOUT_SECONDS` still works). Openverse's anonymous API allows about 20 calls a minute and 200 a day per IP, so the household shares a budget of 20 calls a minute and gets a 429 "photo search is busy" past it. Openverse searches only licenses that allow adapting the photo (CC BY, BY-SA, BY-NC, BY-NC-SA, CC0 and public domain; no "no derivatives") and skips mature results.
+
+- **Thumbnails.** Openverse thumbnails are proxied through `GET /api/v1/images/thumb?provider=openverse&id=` (logged in, size-capped, image type checked, cached in memory), so the browser only talks to this app. Pexels thumbnails load straight from `images.pexels.com`, which the Caddy CSP allows in `img-src`.
+- **Imports.** Using a photo sends only its provider and id. The backend looks it up again at the provider and downloads only what that answer names: for Pexels only `https://images.pexels.com`; for Openverse the source image (for example on `live.staticflickr.com`) over https with an outbound guard (the host must resolve to public addresses only, re-checked on each of at most 3 redirects and again at connect time with the connection pinned to the checked address), falling back to Openverse's own full-size rendition. Downloads are capped at `PHOTO_MAX_BYTES` and go through the normal photo pipeline.
+- **Credit.** An imported photo keeps its attribution (`photo_credit` on recipe responses). Pexels photos show "Photo by <photographer> on Pexels"; Openverse photos show "Photo: <title> by <creator>, <license>" with links to the source page, the creator and the license, as Creative Commons attribution asks. Uploading your own photo or removing it clears the credit.
 
 ## Speech to text
 
