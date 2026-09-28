@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useChatHealth, useConversations, useCreateConversation } from './api'
 import { healthProblem } from './health'
 import { HealthBanner } from './HealthBanner'
+import { useVoiceAutoSend } from './voice'
 
 const whenFormat = new Intl.DateTimeFormat(undefined, {
   month: 'short',
@@ -70,6 +71,32 @@ export function ChatPage() {
           </ul>
         )}
       </section>
+
+      {health.data?.stt?.available && <VoiceSettings />}
     </div>
+  )
+}
+
+function VoiceSettings() {
+  const [autoSend, setAutoSend] = useVoiceAutoSend()
+  return (
+    <section aria-label="Voice" className="flex flex-col gap-2">
+      <h2 className="text-sm font-medium text-muted-foreground">Voice</h2>
+      <label className="flex min-h-11 items-start gap-3 rounded-xl border px-3 py-2.5 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-primary"
+          checked={autoSend}
+          onChange={(event) => setAutoSend(event.target.checked)}
+        />
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium">Send voice messages automatically when confident</span>
+          <span className="text-muted-foreground">
+            Off: the transcript waits in the message box so you can check it. Unclear recordings
+            are never sent automatically.
+          </span>
+        </span>
+      </label>
+    </section>
   )
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, ApiError, api, type Problem } from '@/lib/api'
 
 import { readSse } from './sse'
+import { extensionFor } from './voice'
 
 export type ActionStatus = 'proposed' | 'executed' | 'rejected' | 'failed'
 
@@ -59,6 +60,17 @@ export interface ChatHealth {
   codex: ProviderHealth
   stt?: ProviderHealth & { model?: string }
 }
+
+export interface Transcript {
+  text: string
+  language: string
+  confidence: number | null
+  low_confidence: boolean
+  duration_seconds: number
+}
+
+/** How a message was entered; voice carries the transcript's confidence. */
+export type MessageInput = { input: 'text' } | { input: 'voice'; transcript_confidence: number | null }
 
 export interface StreamCard {
   action_id: number | null
@@ -152,6 +164,34 @@ async function problemFrom(response: Response): Promise<ApiError> {
   }
 }
 
+function messageBody(text: string, source: MessageInput) {
+  if (source.input === 'text') return { text }
+  return source.transcript_confidence === null
+    ? { text, input: 'voice' }
+    : { text, input: 'voice', transcript_confidence: source.transcript_confidence }
+}
+
+/** Upload a recording for speech to text. Nothing is stored server side. */
+export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Transcript> {
+  const form = new FormData()
+  form.append('audio', audio, `voice.${extensionFor(audio.type)}`)
+  let response: Response
+  try {
+    response = await fetch(new URL(`${API_BASE}/chat/transcribe`, window.location.origin), {
+      method: 'POST',
+      headers: { Accept: 'application/json, application/problem+json', 'X-Requested-With': 'jyj' },
+      body: form,
+      credentials: 'same-origin',
+      signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    throw new ApiError({ type: 'about:blank', title: 'Network error', status: 0 })
+  }
+  if (!response.ok) throw await problemFrom(response)
+  return (await response.json()) as Transcript
+}
+
 /**
  * POST a message and relay the turn's SSE events. Resolves when the stream ends; rejects with
  * an AbortError when `signal` fires, or an ApiError when the request itself is refused.
@@ -159,7 +199,11 @@ async function problemFrom(response: Response): Promise<ApiError> {
 export async function streamMessage(
   conversationId: number,
   text: string,
-  { signal, onEvent }: { signal: AbortSignal; onEvent: (event: ChatEvent) => void },
+  {
+    signal,
+    onEvent,
+    source = { input: 'text' },
+  }: { signal: AbortSignal; onEvent: (event: ChatEvent) => void; source?: MessageInput },
 ): Promise<void> {
   const url = new URL(
     `${API_BASE}/chat/conversations/${conversationId}/messages`,
@@ -174,7 +218,7 @@ export async function streamMessage(
         'Content-Type': 'application/json',
         'X-Requested-With': 'jyj',
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(messageBody(text, source)),
       credentials: 'same-origin',
       signal,
     })

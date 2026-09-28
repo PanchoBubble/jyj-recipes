@@ -64,7 +64,7 @@ function Conversation({ conversationId }: { conversationId: number }) {
               turn={live}
               conversationId={conversationId}
               showUser={!storedLastUser(conversation.data, live)}
-              onRetry={() => void send(live.text)}
+              onRetry={() => void send(live.text, live.source)}
               retryDisabled={Boolean(problem)}
             />
           )}
@@ -75,8 +75,9 @@ function Conversation({ conversationId }: { conversationId: number }) {
       <Composer
         disabled={Boolean(problem) || conversation.isPending || conversation.isError}
         streaming={Boolean(live?.streaming)}
-        onSend={(text) => void send(text)}
+        onSend={(text, source) => void send(text, source)}
         onStop={stop}
+        voiceAvailable={health.data?.stt?.available === true}
       />
     </div>
   )

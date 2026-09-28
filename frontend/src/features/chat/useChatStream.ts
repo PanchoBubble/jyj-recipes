@@ -5,7 +5,14 @@ import { isUnauthorized } from '@/lib/api'
 import { meQueryKey } from '@/lib/query'
 
 import { invalidateForAction } from './actions'
-import { cardToAction, chatKeys, streamMessage, type ChatAction, type ChatEvent } from './api'
+import {
+  cardToAction,
+  chatKeys,
+  streamMessage,
+  type ChatAction,
+  type ChatEvent,
+  type MessageInput,
+} from './api'
 
 export interface TurnError {
   code: string
@@ -15,6 +22,7 @@ export interface TurnError {
 /** The turn being streamed, shown until the stored conversation catches up. */
 export interface LiveTurn {
   text: string
+  source: MessageInput
   streaming: boolean
   status: string | null
   actions: ChatAction[]
@@ -40,14 +48,14 @@ export function useChatStream(conversationId: number) {
   useEffect(() => () => controller.current?.abort(), [conversationId])
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, source: MessageInput = { input: 'text' }) => {
       controller.current?.abort()
       const own = new AbortController()
       controller.current = own
       const update = (patch: (turn: LiveTurn) => Partial<LiveTurn>) => {
         if (!own.signal.aborted) setLive((turn) => (turn ? { ...turn, ...patch(turn) } : turn))
       }
-      setLive({ text, streaming: true, status: 'Thinking...', actions: [], reply: null, error: null })
+      setLive({ text, source, streaming: true, status: 'Thinking...', actions: [], reply: null, error: null })
 
       let error: TurnError | null = null
       let done = false
@@ -72,7 +80,7 @@ export function useChatStream(conversationId: number) {
       }
 
       try {
-        await streamMessage(conversationId, text, { signal: own.signal, onEvent })
+        await streamMessage(conversationId, text, { signal: own.signal, onEvent, source })
         if (!done && !error) error = LOST
       } catch (caught) {
         if (own.signal.aborted) return
