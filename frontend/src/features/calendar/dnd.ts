@@ -73,8 +73,12 @@ export const calendarMeasuring: DndContextProps['measuring'] = {
   droppable: { strategy: MeasuringStrategy.Always },
 }
 
+/**
+ * The x threshold only matters for the week grid's column scroller on phones; the page
+ * itself never scrolls sideways. It is wide enough to cover the sticky slot labels.
+ */
 export const calendarAutoScroll: DndContextProps['autoScroll'] = {
-  threshold: { x: 0, y: 0.15 },
+  threshold: { x: 0.2, y: 0.15 },
   acceleration: 12,
 }
 

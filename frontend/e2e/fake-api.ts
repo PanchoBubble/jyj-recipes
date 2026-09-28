@@ -5,6 +5,8 @@ export const WEEK = '2026-09-28'
 const slots = [
   { id: 1, name: 'Lunch', position: 0, active: true },
   { id: 2, name: 'Dinner', position: 1, active: true },
+  { id: 3, name: 'Tea', position: 2, active: true },
+  { id: 4, name: 'Supper', position: 3, active: true },
 ]
 
 const recipes = [
@@ -59,7 +61,14 @@ export interface ApiCall {
 /** In-memory stand-in for the backend, served through route interception. */
 export async function mockApi(page: Page) {
   const calls: ApiCall[] = []
-  let meals = [plannedMeal(1, 8, WEEK, 1)]
+  // Enough stacked meals that the page scrolls vertically on a tall phone too.
+  let meals = [
+    plannedMeal(1, 8, WEEK, 1),
+    plannedMeal(2, 9, WEEK, 1),
+    plannedMeal(3, 9, WEEK, 3),
+    plannedMeal(4, 8, WEEK, 3),
+    plannedMeal(5, 9, WEEK, 4),
+  ].map((m, i, all) => ({ ...m, position: all.slice(0, i).filter((o) => o.slot_id === m.slot_id).length }))
   let nextId = 100
 
   const json = (route: Route, body: unknown, status = 200) =>

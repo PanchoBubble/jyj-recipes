@@ -64,6 +64,7 @@ const longDayFormat = new Intl.DateTimeFormat(undefined, {
   month: 'long',
   timeZone: 'UTC',
 })
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' })
 const shortFormat = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',
   month: 'short',
@@ -72,6 +73,14 @@ const shortFormat = new Intl.DateTimeFormat(undefined, {
 
 export function formatDay(iso: IsoDate) {
   return dayFormat.format(asUtcDate(iso))
+}
+
+export function formatWeekday(iso: IsoDate) {
+  return weekdayFormat.format(asUtcDate(iso))
+}
+
+export function formatDayMonth(iso: IsoDate) {
+  return shortFormat.format(asUtcDate(iso))
 }
 
 export function formatLongDay(iso: IsoDate) {

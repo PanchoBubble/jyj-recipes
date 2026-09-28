@@ -346,6 +346,53 @@ describe('calendar page', () => {
     expect(screen.getAllByRole('button', { name: /^Move / })).toHaveLength(3)
   })
 
+  it('lays the week out as slot rows across day columns, keyed by date and slot', async () => {
+    mockCalendarApi()
+    renderApp(`/calendar?week=${MON}`)
+
+    const grid = await screen.findByTestId('week-grid')
+    const days = Array.from({ length: 7 }, (_, i) => addDays(MON, i))
+    expect(Array.from(grid.querySelectorAll('[data-cell]'), (c) => c.getAttribute('data-cell'))).toEqual([
+      ...days.map((d) => `cell:${d}:${lunch.id}`),
+      ...days.map((d) => `cell:${d}:${dinner.id}`),
+    ])
+    expect(
+      Array.from(grid.querySelectorAll('[data-slot-label]'), (l) => l.textContent),
+    ).toEqual(['Lunch', 'Dinner'])
+    expect(
+      Array.from(screen.getByTestId('day-strip').querySelectorAll('[data-day]'), (d) =>
+        d.getAttribute('data-day'),
+      ),
+    ).toEqual(days)
+  })
+
+  it('keeps an inactive slot row while the week still has meals in it', async () => {
+    mockCalendarApi([...week(), meal(14, soup, TUE, tea, 0)])
+    renderApp(`/calendar?week=${MON}`)
+
+    const tueTea = await screen.findByRole('region', { name: cellLabel(TUE, tea) })
+    expect(within(tueTea).getByRole('button', { name: /^Soup, / })).toBeInTheDocument()
+    expect(within(tueTea).queryByRole('button', { name: /^Add a recipe/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('region', { name: /, Tea$/ })).toHaveLength(7)
+    expect(screen.getByText('(inactive)')).toBeInTheDocument()
+  })
+
+  it("highlights today's column and scrolls it into view", async () => {
+    mockCalendarApi()
+    const user = userEvent.setup()
+    renderApp('/calendar')
+
+    const today = todayIso()
+    const grid = await screen.findByTestId('week-grid')
+    const header = screen.getByTestId('day-strip').querySelector('[aria-current="date"]')
+    expect(header?.getAttribute('data-day')).toBe(today)
+
+    const scrollTo = vi.fn()
+    grid.scrollTo = scrollTo
+    await user.click(screen.getByRole('button', { name: 'Today' }))
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }))
+  })
+
   it('changes week with the prev/next buttons', async () => {
     const requests = mockCalendarApi()
     const user = userEvent.setup()
