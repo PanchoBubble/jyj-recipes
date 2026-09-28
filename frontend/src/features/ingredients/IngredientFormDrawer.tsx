@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Trash2 } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
 
@@ -92,6 +93,21 @@ function problemMessage(error: unknown): string {
   return detail
 }
 
+interface BlockingRecipe {
+  id: number
+  name: string
+  units: string[]
+}
+
+function blockingRecipes(error: unknown): BlockingRecipe[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  const recipes = error.extensions.recipes
+  if (!Array.isArray(recipes) || recipes.length === 0) return null
+  return recipes
+    .filter((r): r is BlockingRecipe => typeof r?.id === 'number' && typeof r?.name === 'string')
+    .map((r) => ({ id: r.id, name: r.name, units: Array.isArray(r.units) ? r.units.map(String) : [] }))
+}
+
 export interface IngredientFormTarget {
   ingredient: Ingredient | null
 }
@@ -137,6 +153,7 @@ function IngredientForm({
   const create = useCreateIngredient()
   const update = useUpdateIngredient(ingredient?.id ?? 0)
   const [formError, setFormError] = useState<string | null>(null)
+  const [blocking, setBlocking] = useState<BlockingRecipe[] | null>(null)
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: toValues(ingredient),
@@ -147,6 +164,7 @@ function IngredientForm({
 
   const onSubmit = form.handleSubmit(async (values) => {
     setFormError(null)
+    setBlocking(null)
     try {
       const input = toInput(values)
       const saved = ingredient
@@ -155,7 +173,9 @@ function IngredientForm({
       toast.success(ingredient ? `Saved ${saved.name}` : `Added ${saved.name}`)
       onDone()
     } catch (error) {
-      setFormError(problemMessage(error))
+      const recipes = blockingRecipes(error)
+      if (recipes) setBlocking(recipes)
+      else setFormError(problemMessage(error))
     }
   })
 
@@ -285,6 +305,27 @@ function IngredientForm({
           <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {formError}
           </p>
+        )}
+
+        {blocking && (
+          <div role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p>Used by these recipes in units that need this conversion:</p>
+            <ul className="mt-1 flex flex-col">
+              {blocking.map((r) => (
+                <li key={r.id}>
+                  <Link
+                    to={`/recipes/${r.id}/edit`}
+                    onClick={onDone}
+                    className="inline-flex min-h-11 items-center gap-1 font-medium underline underline-offset-4"
+                  >
+                    {r.name}
+                  </Link>
+                  {r.units.length > 0 && <span className="text-destructive/80"> ({r.units.join(', ')})</span>}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1">Change those lines first, then save again.</p>
+          </div>
         )}
 
         <Button type="submit" className="h-11" disabled={isSubmitting}>

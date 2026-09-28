@@ -349,4 +349,43 @@ describe('ingredient management', () => {
     )
     expect(screen.getByRole('dialog', { name: 'Edit ingredient' })).toBeInTheDocument()
   })
+  it('lists the recipes that block a conversion change and links to their editors', async () => {
+    serveIngredients([flour])
+    server.use(
+      http.patch(`${API}/ingredients/1`, () =>
+        HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Conflict',
+            status: 409,
+            detail: "recipes use 'Flour' in units that would no longer convert; change those lines first",
+            recipes: [
+              { id: 7, name: 'Pancakes', units: ['cup'] },
+              { id: 8, name: 'Bread', units: ['cup', 'ml'] },
+            ],
+          },
+          { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
+      http.get(`${API}/recipes/7`, () => problem(404, 'Not Found')),
+    )
+    const { router } = renderApp('/stock')
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: /^Flour/ }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Edit' }))
+    const form = await screen.findByRole('dialog', { name: 'Edit ingredient' })
+    await user.clear(within(form).getByLabelText('Grams per ml'))
+    await user.click(within(form).getByRole('button', { name: 'Save' }))
+
+    const alert = await within(form).findByRole('alert')
+    expect(alert).toHaveTextContent('Used by these recipes in units that need this conversion')
+    expect(alert).not.toHaveTextContent('would no longer convert')
+    expect(within(alert).getByRole('link', { name: 'Pancakes' })).toHaveAttribute('href', '/recipes/7/edit')
+    expect(within(alert).getByRole('link', { name: 'Bread' })).toHaveAttribute('href', '/recipes/8/edit')
+    expect(alert).toHaveTextContent('(cup, ml)')
+
+    await user.click(within(alert).getByRole('link', { name: 'Pancakes' }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/7/edit'))
+  })
 })
