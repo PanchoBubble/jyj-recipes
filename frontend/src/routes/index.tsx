@@ -4,20 +4,15 @@ import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
 import { CalendarPage } from '@/features/calendar/CalendarPage'
+import { ChatPage } from '@/features/chat/ChatPage'
+import { ConversationPage } from '@/features/chat/ConversationPage'
 import { RecipeDetailPage } from '@/features/recipes/RecipeDetailPage'
 import { RecipeEditorPage } from '@/features/recipes/RecipeEditorPage'
 import { RecipesPage } from '@/features/recipes/RecipesPage'
 import { ShoppingListPage } from '@/features/shopping/ShoppingListPage'
 import { ShoppingPage } from '@/features/shopping/ShoppingPage'
 import { StockPage } from '@/features/stock/StockPage'
-import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { SettingsPage } from '@/routes/SettingsPage'
-
-const tab = (path: string, title: string): RouteObject => ({
-  path,
-  element: <PlaceholderPage />,
-  handle: { title } satisfies RouteHandle,
-})
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -72,7 +67,14 @@ export const routes: RouteObject[] = [
             element: <StockPage />,
             handle: { title: 'Stock' } satisfies RouteHandle,
           },
-          tab('chat', 'Chat'),
+          {
+            path: 'chat',
+            handle: { title: 'Chat' } satisfies RouteHandle,
+            children: [
+              { index: true, element: <ChatPage /> },
+              { path: ':id', element: <ConversationPage /> },
+            ],
+          },
           {
             path: 'settings',
             element: <SettingsPage />,
