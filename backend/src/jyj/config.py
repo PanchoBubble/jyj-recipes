@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     stt_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     stt_max_seconds: float = Field(default=60.0, gt=0)
 
+    photos_dir: Path = Path("/var/lib/jyj/photos")
+    photo_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+
     @model_validator(mode="after")
     def _require_explicit_values_in_production(self) -> "Settings":
         if self.app_env != "production":

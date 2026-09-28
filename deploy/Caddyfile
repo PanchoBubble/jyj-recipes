@@ -45,6 +45,8 @@
 	}
 
 	handle_path /media/* {
+		# Photo files get a fresh random name on every upload, so they never change in place.
+		header Cache-Control "private, max-age=31536000, immutable"
 		root * /srv/media
 		file_server
 	}

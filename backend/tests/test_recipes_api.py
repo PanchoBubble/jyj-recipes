@@ -145,7 +145,8 @@ def test_nested_create_keeps_order_and_returns_lines(
     assert recipe["name"] == "Crêpes"
     assert recipe["default_servings"] == 4
     assert recipe["created_by"] == user.id
-    assert recipe["photo_path"] is None
+    assert recipe["photo_url"] is None
+    assert recipe["photo_thumb_url"] is None
     assert recipe["archived_at"] is None
     assert recipe["ingredient_count"] == 4
     lines = recipe["ingredients"]

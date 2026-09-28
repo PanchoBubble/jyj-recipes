@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from jyj.models import Ingredient, PlannedMeal, Recipe, RecipeIngredient, StockSource, User
 from jyj.services import ingredients as ingredients_service
+from jyj.services import photos
 from jyj.services.errors import InvalidError, NotFoundError, ServiceError
 from jyj.services.ingredients import _escape_like
 from jyj.services.stock import MAX_QUANTITY
@@ -168,6 +169,7 @@ def delete_recipe(db: Session, user: User, source: StockSource, recipe_id: int) 
             recipe.archived_at = datetime.now(UTC)
         db.flush()
         return DeleteOutcome.ARCHIVED
+    photos.remove_after_commit(db, recipe.photo_path)
     db.delete(recipe)
     db.flush()
     return DeleteOutcome.DELETED

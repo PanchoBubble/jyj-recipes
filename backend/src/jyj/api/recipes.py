@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from jyj.api.auth import CurrentUser
@@ -16,6 +16,7 @@ from jyj.schemas.recipes import (
     ScaledRecipeOut,
     Servings,
 )
+from jyj.services import photos
 from jyj.services import recipes as service
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -90,3 +91,18 @@ def scaled_recipe(
         servings=servings,
         ingredients=[ScaledIngredientOut.build(s) for s in service.scale_recipe(recipe, servings)],
     )
+
+
+@router.put("/{recipe_id}/photo", response_model=RecipeOut)
+def put_photo(
+    recipe_id: int, file: Annotated[UploadFile, File()], _: CurrentUser, db: Db
+) -> RecipeOut:
+    # Sync on purpose: FastAPI runs it in the threadpool, keeping decode off the event loop.
+    service.get_recipe(db, recipe_id)
+    data = photos.read_capped(file.file, photos.max_bytes())
+    return RecipeOut.build(photos.set_recipe_photo(db, recipe_id, data))
+
+
+@router.delete("/{recipe_id}/photo", response_model=RecipeOut)
+def delete_photo(recipe_id: int, _: CurrentUser, db: Db) -> RecipeOut:
+    return RecipeOut.build(photos.clear_recipe_photo(db, recipe_id))

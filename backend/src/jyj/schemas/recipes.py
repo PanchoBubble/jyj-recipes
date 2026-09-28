@@ -7,6 +7,7 @@ from jyj.models import Recipe, RecipeIngredient
 from jyj.schemas.common import AmountIn, DecimalStr
 from jyj.schemas.ingredients import IngredientCreate
 from jyj.schemas.stock import DisplayQuantity
+from jyj.services.photos import photo_url, thumb_url
 from jyj.services.recipes import (
     DESCRIPTION_MAX,
     LINES_MAX,
@@ -95,7 +96,8 @@ class RecipeSummary(BaseModel):
     id: int
     name: str
     description: str | None
-    photo_path: str | None
+    photo_url: str | None
+    photo_thumb_url: str | None
     default_servings: int
     ingredient_count: int
     created_by: int
@@ -109,7 +111,8 @@ class RecipeSummary(BaseModel):
             id=recipe.id,
             name=recipe.name,
             description=recipe.description,
-            photo_path=recipe.photo_path,
+            photo_url=photo_url(recipe.photo_path),
+            photo_thumb_url=thumb_url(recipe.photo_path),
             default_servings=recipe.default_servings,
             ingredient_count=len(recipe.ingredients),
             created_by=recipe.created_by,

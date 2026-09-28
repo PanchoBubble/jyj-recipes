@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from jyj.api.auth import router as auth_router
+from jyj.api.body_limit import BodySizeLimitMiddleware
 from jyj.api.csrf import CSRFHeaderMiddleware
 from jyj.api.health import router as health_router
 from jyj.api.ingredients import router as ingredients_router
@@ -12,10 +13,13 @@ from jyj.api.recipes import router as recipes_router
 from jyj.api.stock import router as stock_router
 from jyj.api.units import router as units_router
 from jyj.chat.router import router as chat_router
+from jyj.config import get_settings
 from jyj.services.errors import ServiceError
 from jyj.services.rate_limit import LoginRateLimiter
 
 API_PREFIX = "/api/v1"
+# Room for multipart framing around a maximum-size photo.
+BODY_OVERHEAD_BYTES = 256 * 1024
 
 
 async def _service_error(_: Request, exc: ServiceError) -> JSONResponse:
@@ -28,6 +32,9 @@ def create_app() -> FastAPI:
     install_problem_handlers(app)
     app.add_exception_handler(ServiceError, _service_error)  # type: ignore[arg-type]
     app.add_middleware(CSRFHeaderMiddleware, prefix=API_PREFIX)
+    app.add_middleware(
+        BodySizeLimitMiddleware, max_bytes=get_settings().photo_max_bytes + BODY_OVERHEAD_BYTES
+    )
     app.include_router(health_router)
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(units_router, prefix=API_PREFIX)
