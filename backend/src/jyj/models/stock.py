@@ -64,6 +64,7 @@ class StockMovement(Base):
         Index("ix_stock_movements_ingredient_created", "ingredient_id", "created_at"),
         Index("ix_stock_movements_created_at", "created_at"),
         Index("ix_stock_movements_planned_meal_id", "planned_meal_id"),
+        Index("ix_stock_movements_shopping_list_id", "shopping_list_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -74,8 +75,9 @@ class StockMovement(Base):
     planned_meal_id: Mapped[int | None] = mapped_column(
         ForeignKey("planned_meals.id", ondelete="SET NULL")
     )
-    # Plain int until shopping_lists exists; its FK gets added with that table.
-    shopping_list_id: Mapped[int | None]
+    shopping_list_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shopping_lists.id", ondelete="SET NULL")
+    )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     source: Mapped[StockSource] = mapped_column(stock_source_enum)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

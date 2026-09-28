@@ -10,6 +10,8 @@ from jyj.api.meal_slots import router as meal_slots_router
 from jyj.api.planned_meals import router as planned_meals_router
 from jyj.api.problems import install_problem_handlers, problem
 from jyj.api.recipes import router as recipes_router
+from jyj.api.shopping import preview_router as shopping_preview_router
+from jyj.api.shopping import router as shopping_lists_router
 from jyj.api.stock import router as stock_router
 from jyj.api.units import router as units_router
 from jyj.chat.router import router as chat_router
@@ -43,6 +45,8 @@ def create_app() -> FastAPI:
     app.include_router(recipes_router, prefix=API_PREFIX)
     app.include_router(meal_slots_router, prefix=API_PREFIX)
     app.include_router(planned_meals_router, prefix=API_PREFIX)
+    app.include_router(shopping_preview_router, prefix=API_PREFIX)
+    app.include_router(shopping_lists_router, prefix=API_PREFIX)
     app.include_router(chat_router, prefix=API_PREFIX)
     return app
 
