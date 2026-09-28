@@ -1,4 +1,4 @@
-"""Household account admin: `jyj users create|reset-password|disable|list`.
+"""Admin commands: `jyj users create|reset-password|disable|list` and `jyj chat purge`.
 
 Passwords are only ever read with getpass, never from argv, so they stay out of shell
 history and process listings.
@@ -12,6 +12,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 
+from jyj.chat import conversations
 from jyj.db import get_sessionmaker, session_scope
 from jyj.services import auth as auth_service
 
@@ -50,6 +51,21 @@ def _list(db: Session, _: argparse.Namespace) -> str:
     return "\n".join(rows) if rows else "no users"
 
 
+def _purge_chat(db: Session, args: argparse.Namespace) -> str:
+    result = conversations.purge(db, days=args.days)
+    return (
+        f"purged {result.conversations} conversations and {result.messages} messages "
+        f"older than {args.days} days; closed {result.expired_proposals} pending proposals"
+    )
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jyj")
     groups = parser.add_subparsers(dest="group", required=True)
@@ -71,6 +87,15 @@ def build_parser() -> argparse.ArgumentParser:
     disable.set_defaults(handler=_disable)
 
     users.add_parser("list", help="list accounts").set_defaults(handler=_list)
+
+    chat = groups.add_parser("chat", help="chat assistant maintenance").add_subparsers(
+        dest="command", required=True
+    )
+    purge = chat.add_parser("purge", help="delete chat text past the retention window")
+    purge.add_argument(
+        "--days", type=_positive_int, default=conversations.RETENTION_DAYS, help="default: 90"
+    )
+    purge.set_defaults(handler=_purge_chat)
     return parser
 
 

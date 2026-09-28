@@ -50,6 +50,14 @@ uv run jyj users list
 
 The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj` on every non-GET request under `/api/v1`.
 
+## Chat
+
+`POST /api/v1/chat/conversations/{id}/messages` runs one assistant turn and streams Server-Sent Events: `status`, `action` (executed or proposed, with its action id), `assistant`, `error` (sanitized) and a final `done`. Proposed actions (deletes, stock overwrites) wait for `POST /api/v1/chat/actions/{id}/confirm` or `/reject`. Chat text is kept 90 days; run the purge from cron (the `chat_actions` audit rows are kept):
+
+```sh
+docker compose exec backend jyj chat purge   # --days N to override
+```
+
 ## Speech to text
 
 The backend image ships `whisper-cli` (whisper.cpp v1.9.1, built for armv8.2-a+dotprod on arm64) and a minimal static `ffmpeg`. Models are not baked in: `make whisper-download` (or `model=base`) fetches the multilingual ggml model from the whisper.cpp Hugging Face repo into the `whisper-models` volume and verifies its pinned SHA-256. `jyj.stt.get_transcriber()` converts uploads (webm/opus, mp4/aac, ogg, wav, mp3; max 5 MiB, 60 s) to 16 kHz mono WAV, runs one job at a time and deletes temp files afterwards. Audio is never persisted and transcripts are only logged at DEBUG. `tests/test_stt_integration.py` runs against a real install when `WHISPER_MODEL_PATH` points at a model.

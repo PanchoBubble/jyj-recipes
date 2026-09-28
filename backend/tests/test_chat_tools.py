@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from jyj.chat.tools import Registry, Tool, ToolContext, ToolStatus, build_registry
 from jyj.chat.tools.schema import StrictSchemaError, check_strict, strict_schema
-from jyj.models import ChatAction, ChatActionStatus, Ingredient, Recipe, StockMovement, User
+from jyj.models import (
+    ChatAction,
+    ChatActionStatus,
+    ChatConversation,
+    Ingredient,
+    Recipe,
+    StockMovement,
+    User,
+)
 from jyj.services import auth as auth_service
 from jyj.services import ingredients as ingredients_service
 from jyj.services import recipes as recipes_service
@@ -56,7 +64,10 @@ def other_user(db: Session) -> User:
 
 @pytest.fixture
 def ctx(db: Session, user: User) -> ToolContext:
-    return ToolContext(db=db, user=user, conversation_id=7)
+    conversation = ChatConversation(user_id=user.id)
+    db.add(conversation)
+    db.flush()
+    return ToolContext(db=db, user=user, conversation_id=conversation.id)
 
 
 @pytest.fixture
@@ -114,7 +125,7 @@ def test_unknown_tool_is_rejected_and_audited(registry: Registry, ctx: ToolConte
         {"all": True},
     )
     assert row.requested_by == ctx.user.id
-    assert row.conversation_id == 7
+    assert row.conversation_id == ctx.conversation_id
     assert row.executed_at is None
 
 
