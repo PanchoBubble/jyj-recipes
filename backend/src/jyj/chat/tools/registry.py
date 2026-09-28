@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from jyj.chat.tools.schema import check_strict, strict_schema
-from jyj.models import ChatAction, ChatActionStatus, StockSource, User
+from jyj.models import ChatAction, ChatActionStatus, ChatConversation, StockSource, User
 from jyj.services.errors import ConflictError, NotFoundError, ServiceError
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,8 @@ class Registry:
         return self._audit(ctx, name, stored_args, result, executed=True)
 
     def confirm(self, ctx: ToolContext, action_id: int) -> ToolResult:
-        """Run a proposed action as ``ctx.user``; a second confirm is rejected."""
+        """Run a proposed action as ``ctx.user``, who must have requested it or own its
+        conversation; a second confirm is rejected."""
         action = self._lock_proposed(ctx, action_id)
         if isinstance(action, ToolResult):
             return action
@@ -247,7 +248,8 @@ class Registry:
             .with_for_update()
             .execution_options(populate_existing=True)
         ).one_or_none()
-        if action is None:
+        # Someone else's proposal looks exactly like a missing one.
+        if action is None or not _owns(ctx, action):
             return _rejected("", "not_found", f"action {action_id} not found")
         if action.status is not ChatActionStatus.PROPOSED:
             return ToolResult(
@@ -318,6 +320,17 @@ class Registry:
         ctx.db.add(action)
         ctx.db.flush()
         return ToolResult(result.tool, result.status, result.data, result.error, action.id)
+
+
+def _owns(ctx: ToolContext, action: ChatAction) -> bool:
+    if action.requested_by == ctx.user.id:
+        return True
+    if action.conversation_id is None:
+        return False
+    owner = ctx.db.scalar(
+        select(ChatConversation.user_id).where(ChatConversation.id == action.conversation_id)
+    )
+    return owner == ctx.user.id
 
 
 def _validate(tool: Tool, raw_args: Any) -> tuple[BaseModel | None, ToolResult | None]:

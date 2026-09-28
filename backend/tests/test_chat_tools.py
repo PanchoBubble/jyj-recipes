@@ -600,7 +600,7 @@ def test_adjust_stock_rejects_unconvertible_units(registry: Registry, ctx: ToolC
 
 
 def test_delete_recipe_waits_for_confirmation_and_runs_once(
-    registry: Registry, ctx: ToolContext, other_user: User
+    registry: Registry, ctx: ToolContext
 ) -> None:
     recipe = recipes_service.create_recipe(ctx.db, ctx.user, ctx.source, name="Soup")
 
@@ -613,7 +613,7 @@ def test_delete_recipe_waits_for_confirmation_and_runs_once(
     assert action.status is ChatActionStatus.PROPOSED
     assert action.executed_at is None and action.confirmed_by is None
 
-    confirmer = ToolContext(db=ctx.db, user=other_user)
+    confirmer = ToolContext(db=ctx.db, user=ctx.user)
     confirmed = registry.confirm(confirmer, proposed.action_id)
 
     assert confirmed.status is ToolStatus.SUCCESS
@@ -622,8 +622,7 @@ def test_delete_recipe_waits_for_confirmation_and_runs_once(
     assert ctx.db.get(Recipe, recipe.id) is None
     action = ctx.db.get(ChatAction, proposed.action_id)
     assert action.status is ChatActionStatus.EXECUTED
-    assert action.confirmed_by == other_user.id
-    assert action.requested_by == ctx.user.id
+    assert action.confirmed_by == action.requested_by == ctx.user.id
     assert action.executed_at is not None
 
     again = registry.confirm(confirmer, proposed.action_id)
@@ -708,6 +707,50 @@ def test_confirming_unknown_or_executed_actions_is_rejected(
     assert registry.confirm(ctx, 999999).error["code"] == "not_found"
     done = registry.execute("list_ingredients", {"query": None, "limit": None}, ctx)
     assert registry.confirm(ctx, done.action_id).error["code"] == "not_pending"
+
+
+def test_only_the_requester_or_conversation_owner_can_decide(
+    registry: Registry, ctx: ToolContext, other_user: User
+) -> None:
+    recipe = recipes_service.create_recipe(ctx.db, ctx.user, ctx.source, name="Stew")
+    proposed = registry.execute("delete_recipe", {"recipe_id": recipe.id}, ctx)
+    intruder = ToolContext(db=ctx.db, user=other_user, conversation_id=ctx.conversation_id)
+
+    for decide in (registry.confirm, registry.reject):
+        result = decide(intruder, proposed.action_id)
+        assert result.status is ToolStatus.REJECTED
+        assert result.error["code"] == "not_found"
+        assert result.tool == ""
+
+    row = ctx.db.get(ChatAction, proposed.action_id)
+    assert row.status is ChatActionStatus.PROPOSED
+    assert row.confirmed_by is None
+    assert ctx.db.get(Recipe, recipe.id) is not None
+
+
+def test_conversation_owner_can_decide_a_proposal_they_did_not_request(
+    registry: Registry, ctx: ToolContext, other_user: User
+) -> None:
+    recipe = recipes_service.create_recipe(ctx.db, ctx.user, ctx.source, name="Stew")
+    guest = ToolContext(db=ctx.db, user=other_user, conversation_id=ctx.conversation_id)
+    proposed = registry.execute("delete_recipe", {"recipe_id": recipe.id}, guest)
+
+    assert registry.confirm(ctx, proposed.action_id).ok
+    assert ctx.db.get(ChatAction, proposed.action_id).confirmed_by == ctx.user.id
+
+
+def test_requester_can_decide_after_the_conversation_is_gone(
+    registry: Registry, ctx: ToolContext, other_user: User
+) -> None:
+    recipe = recipes_service.create_recipe(ctx.db, ctx.user, ctx.source, name="Stew")
+    loose = ToolContext(db=ctx.db, user=ctx.user)
+    proposed = registry.execute("delete_recipe", {"recipe_id": recipe.id}, loose)
+
+    assert (
+        registry.reject(ToolContext(db=ctx.db, user=other_user), proposed.action_id).error["code"]
+        == "not_found"
+    )
+    assert registry.reject(loose, proposed.action_id).error["code"] == "declined"
 
 
 def test_confirm_of_a_vanished_recipe_is_recorded_as_rejected(
