@@ -1,6 +1,6 @@
 """Chat tool registry and the tools the assistant may call."""
 
-from jyj.chat.tools import ingredients, recipes, stock
+from jyj.chat.tools import calendar, ingredients, recipes, shopping, stock
 from jyj.chat.tools.registry import (
     Registry,
     Tool,
@@ -13,7 +13,9 @@ from jyj.chat.tools.registry import (
 
 def build_registry() -> Registry:
     registry = Registry()
-    registry.register_all((*recipes.TOOLS, *ingredients.TOOLS, *stock.TOOLS))
+    registry.register_all(
+        (*recipes.TOOLS, *ingredients.TOOLS, *stock.TOOLS, *calendar.TOOLS, *shopping.TOOLS)
+    )
     return registry
 
 

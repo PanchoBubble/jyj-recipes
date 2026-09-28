@@ -326,7 +326,14 @@ def test_output_schema_splits_reads_and_writes(registry: Registry) -> None:
             )
         return {b["properties"]["tool"]["enum"][0] for b in branches}
 
-    assert tools_in("needs") == {"search_recipes", "get_recipe", "list_ingredients", "get_stock"}
+    assert tools_in("needs") == {
+        "search_recipes",
+        "get_recipe",
+        "list_ingredients",
+        "get_stock",
+        "get_plan",
+        "preview_shopping",
+    }
     assert tools_in("actions") == {
         "create_recipe",
         "update_recipe",
@@ -334,6 +341,13 @@ def test_output_schema_splits_reads_and_writes(registry: Registry) -> None:
         "create_ingredient",
         "adjust_stock",
         "set_stock",
+        "plan_meal",
+        "move_meal",
+        "set_servings",
+        "remove_meal",
+        "mark_cooked",
+        "uncook_meal",
+        "create_shopping_list",
     }
 
 
@@ -370,6 +384,8 @@ def test_catalog_text_lists_every_tool(registry: Registry) -> None:
     for name in registry.names:
         assert f"- {name}(" in text
     assert "delete_recipe(recipe_id: integer) [asks the user to confirm first]" in text
+    assert "remove_meal(meal_id: integer) [asks the user to confirm first]" in text
+    assert "get_plan(from: string, to: string)" in text
 
 
 # --- recipe tools ---------------------------------------------------------------------------
@@ -739,7 +755,10 @@ FORBIDDEN_IMPORTS = (
 )
 
 
-@pytest.mark.parametrize("module", ["recipes.py", "ingredients.py", "stock.py", "common.py"])
+@pytest.mark.parametrize(
+    "module",
+    ["recipes.py", "ingredients.py", "stock.py", "calendar.py", "shopping.py", "common.py"],
+)
 def test_tool_modules_only_reach_data_through_services(module: str) -> None:
     tree = ast.parse((TOOLS_DIR / module).read_text())
     imported = set()
