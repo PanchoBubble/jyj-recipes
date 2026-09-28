@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import stat
 import sys
 import textwrap
@@ -162,11 +163,14 @@ def test_children_do_not_inherit_app_secrets(
     bin_dir: Path, work_dir: Path, model: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SESSION_SECRET", "s3cret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://jyj:pw@db/jyj")
+    monkeypatch.setenv("SECRET_X", "x")
     make(bin_dir, work_dir, model).transcribe(b"audio", "audio/mp4")
 
     env = whisper_call(bin_dir)["env"]
     assert isinstance(env, dict)
-    assert "SESSION_SECRET" not in env
+    assert not {"SESSION_SECRET", "DATABASE_URL", "SECRET_X"} & set(env)
+    assert env["HOME"] != os.environ.get("HOME")
     assert ffmpeg_args(bin_dir)[ffmpeg_args(bin_dir).index("-f") + 1] == "mov"
 
 

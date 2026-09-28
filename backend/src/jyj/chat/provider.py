@@ -4,6 +4,8 @@ The CLI owns its credentials under CODEX_HOME. This module only runs the binary 
 reads its JSONL event stream; it never opens, copies or parses anything the CLI stores.
 Every run is pinned to a read-only sandbox in a throwaway empty directory, ignores the
 user config (so no MCP servers, hooks or custom providers load) and persists no session.
+The model can run shell commands in that sandbox, so the CLI gets an allowlisted
+environment with a throwaway HOME rather than the backend's own (DB URL, session secret).
 """
 
 from __future__ import annotations
@@ -34,6 +36,20 @@ _TERMINATE_GRACE_SECONDS = 2.0
 _LOGIN_STATUS_TIMEOUT_SECONDS = 5.0
 _HEALTH_CACHE_SECONDS = 30.0
 _QUEUE_POLL_SECONDS = 0.1
+_DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
+# The CLI needs these to find its login, render text and verify TLS; none carry app secrets.
+_PASSTHROUGH_ENV = ("CODEX_HOME", "LANG", "LC_ALL", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR")
+# Proxy URLs can embed credentials, so they are only forwarded when explicitly enabled.
+_PROXY_ENV = (
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "all_proxy",
+    "no_proxy",
+)
 
 
 class ProviderError(RuntimeError):
@@ -169,11 +185,13 @@ class CodexProvider:
         model: str | None = None,
         timeout: float = 90.0,
         enabled: bool = True,
+        forward_proxy_env: bool = False,
     ) -> None:
         self.binary = binary
         self.model = model or None
         self.timeout = timeout
         self.enabled = enabled
+        self.forward_proxy_env = forward_proxy_env
         self._slot = threading.Semaphore(1)
         self._health_lock = threading.Lock()
         self._health_cache: tuple[float, ProviderHealth] | None = None
@@ -198,14 +216,16 @@ class CodexProvider:
         if executable is None:
             return ProviderHealth(False, "binary_not_found")
         try:
-            completed = subprocess.run(  # noqa: S603
-                [executable, "login", "status"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                timeout=_LOGIN_STATUS_TIMEOUT_SECONDS,
-                env=self._environment(),
-                check=False,
-            )
+            with tempfile.TemporaryDirectory(prefix="jyj-codex-") as home:
+                completed = subprocess.run(  # noqa: S603
+                    [executable, "login", "status"],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    timeout=_LOGIN_STATUS_TIMEOUT_SECONDS,
+                    cwd=home,
+                    env=self.environment(Path(home)),
+                    check=False,
+                )
         except subprocess.TimeoutExpired:
             return ProviderHealth(False, "unavailable:login_status_timeout")
         except OSError as error:
@@ -243,7 +263,7 @@ class CodexProvider:
                 schema_path = Path(root) / "schema.json"
                 schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
                 argv = self.build_argv(executable, workdir, schema_path)
-                text = self._run(argv, workdir, prompt, limit, cancel)
+                text = self._run(argv, workdir, Path(root), prompt, limit, cancel)
         finally:
             self._slot.release()
         return self._parse(text)
@@ -286,6 +306,7 @@ class CodexProvider:
         self,
         argv: list[str],
         workdir: Path,
+        home: Path,
         prompt: str,
         limit: float,
         cancel: threading.Event,
@@ -298,7 +319,7 @@ class CodexProvider:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=workdir,
-                env=self._environment(),
+                env=self.environment(home),
             )
         except OSError as error:
             raise ProviderUnavailable(
@@ -426,8 +447,13 @@ class CodexProvider:
             return candidate if os.access(candidate, os.X_OK) else None
         return shutil.which(candidate)
 
-    @staticmethod
-    def _environment() -> dict[str, str]:
-        environment = dict(os.environ)
+    def environment(self, home: Path) -> dict[str, str]:
+        """Build the CLI's environment from an allowlist; nothing else is inherited."""
+        names = _PASSTHROUGH_ENV + (_PROXY_ENV if self.forward_proxy_env else ())
+        environment = {name: os.environ[name] for name in names if os.environ.get(name)}
+        # Without an explicit CODEX_HOME the CLI would look under the throwaway HOME.
+        environment.setdefault("CODEX_HOME", str(Path.home() / ".codex"))
+        environment["PATH"] = os.environ.get("PATH") or _DEFAULT_PATH
+        environment["HOME"] = str(home)
         environment["NO_COLOR"] = "1"
         return environment

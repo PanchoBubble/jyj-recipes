@@ -55,6 +55,7 @@ def get_codex_provider() -> CodexProvider:
         model=settings.codex_model,
         timeout=settings.codex_timeout_seconds,
         enabled=settings.codex_enabled,
+        forward_proxy_env=settings.codex_forward_proxy_env,
     )
 
 

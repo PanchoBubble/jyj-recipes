@@ -26,6 +26,22 @@ SCHEMA = {
     "properties": {"reply": {"type": "string"}},
 }
 ANSWER = {"reply": "hi", "actions": [], "needs": []}
+FAKE_CONTROL_ENV = (
+    "FAKE_CODEX_ARGV_LOG",
+    "FAKE_CODEX_LOGGED_IN",
+    "FAKE_CODEX_LOGIN_HANG",
+    "FAKE_CODEX_MODE",
+    "FAKE_CODEX_PID_FILE",
+    "FAKE_CODEX_PROMPT_LOG",
+)
+APP_SECRETS = {
+    "DATABASE_URL": "postgresql+psycopg://jyj:db-pass-123@db:5432/jyj",
+    "SESSION_SECRET": "session-secret-456",
+    "POSTGRES_PASSWORD": "db-pass-123",
+    "JYJ_SOMETHING": "app-setting",
+    "CODEX_MODEL": "app-model",
+    "SECRET_X": "random-secret-789",
+}
 
 
 @pytest.fixture
@@ -34,6 +50,9 @@ def fake_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     binary.parent.mkdir()
     binary.write_text(f"#!{sys.executable}\n" + FAKE_SOURCE.read_text())
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    # The fake is steered by env vars the real allowlist would strip.
+    passthrough = provider_module._PASSTHROUGH_ENV + FAKE_CONTROL_ENV
+    monkeypatch.setattr(provider_module, "_PASSTHROUGH_ENV", passthrough)
     monkeypatch.setenv("FAKE_CODEX_ARGV_LOG", str(tmp_path / "argv.jsonl"))
     monkeypatch.setenv("FAKE_CODEX_LOGGED_IN", "1")
     return binary
@@ -259,10 +278,10 @@ def test_health_login_status_timeout(fake_codex: Path, monkeypatch: pytest.Monke
     assert make(fake_codex).health().detail == "unavailable:login_status_timeout"
 
 
-def test_subprocess_env_sets_no_color(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_subprocess_env_sets_no_color(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CODEX_HOME", "/var/lib/codex")
 
-    env = CodexProvider._environment()
+    env = CodexProvider().environment(tmp_path)
 
     assert env["NO_COLOR"] == "1"
     assert env["CODEX_HOME"] == "/var/lib/codex"
@@ -273,3 +292,82 @@ def test_provider_source_never_references_codex_credentials() -> None:
 
     assert "auth.json" not in source
     assert "dangerously" not in source
+
+
+def env_dumping_codex(tmp_path: Path, dump: Path) -> Path:
+    binary = tmp_path / "envbin" / "codex"
+    binary.parent.mkdir()
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "record = {'argv': sys.argv[1:], 'env': dict(os.environ)}\n"
+        f"open({str(dump)!r}, 'a').write(json.dumps(record) + '\\n')\n"
+        "if sys.argv[1:2] == ['exec']:\n"
+        "    sys.stdin.read()\n"
+        "    text = json.dumps({'reply': 'ok'})\n"
+        "    item = {'type': 'agent_message', 'text': text}\n"
+        "    print(json.dumps({'type': 'item.completed', 'item': item}))\n"
+        "    print(json.dumps({'type': 'turn.completed'}))\n"
+    )
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    return binary
+
+
+def test_environment_is_an_allowlist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in APP_SECRETS.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CODEX_HOME", "/var/lib/codex")
+    monkeypatch.setenv("HTTPS_PROXY", "http://user:pw@proxy:3128")
+
+    env = CodexProvider().environment(tmp_path)
+
+    assert set(env) <= {"PATH", "HOME", "NO_COLOR", *provider_module._PASSTHROUGH_ENV}
+    assert not set(APP_SECRETS) & set(env)
+    assert "HTTPS_PROXY" not in env
+    assert env["CODEX_HOME"] == "/var/lib/codex"
+    assert env["HOME"] == str(tmp_path)
+    assert env["NO_COLOR"] == "1"
+
+
+def test_proxy_env_is_forwarded_only_when_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy:3128")
+    monkeypatch.setenv("no_proxy", "localhost")
+
+    env = CodexProvider(forward_proxy_env=True).environment(tmp_path)
+
+    assert env["HTTPS_PROXY"] == "http://proxy:3128"
+    assert env["no_proxy"] == "localhost"
+
+
+def test_missing_codex_home_falls_back_to_the_real_home_not_the_throwaway_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+
+    env = CodexProvider().environment(tmp_path)
+
+    assert env["CODEX_HOME"] == str(Path.home() / ".codex")
+
+
+def test_codex_processes_never_see_app_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, value in APP_SECRETS.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    dump = tmp_path / "env.jsonl"
+    provider = make(env_dumping_codex(tmp_path, dump))
+
+    assert provider.health().available
+    assert provider.complete("x", SCHEMA, timeout=10) == {"reply": "ok"}
+
+    runs = [json.loads(line) for line in dump.read_text().splitlines()]
+    assert [run["argv"][0] for run in runs] == ["login", "exec"]
+    for run in runs:
+        env = run["env"]
+        assert env["CODEX_HOME"] == str(tmp_path / "codex-home")
+        assert env["HOME"] != os.environ.get("HOME")
+        leaked = [value for value in APP_SECRETS.values() if value in json.dumps(env)]
+        assert not leaked

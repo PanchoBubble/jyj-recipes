@@ -235,7 +235,7 @@ class Transcriber:
             return subprocess.run(  # noqa: S603 - fixed argv, no shell
                 command,
                 cwd=cwd,
-                env=_child_env(),
+                env=_child_env(cwd),
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
                 timeout=self.timeout_seconds,
@@ -255,9 +255,13 @@ def get_transcriber() -> Transcriber:
     return Transcriber.from_settings(get_settings())
 
 
-def _child_env() -> dict[str, str]:
-    # Children get no app secrets from the environment.
-    return {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "LC_ALL": "C.UTF-8"}
+def _child_env(home: Path) -> dict[str, str]:
+    # Children get no app secrets from the environment and no real HOME to read.
+    return {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "HOME": str(home),
+        "LC_ALL": "C.UTF-8",
+    }
 
 
 def _base_mime(mime_type: str) -> str:

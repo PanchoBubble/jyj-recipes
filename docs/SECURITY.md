@@ -14,7 +14,7 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
 | Network | PASS, one FOLLOW-UP (`jyj-ffk`, default bind address) |
 | Auth | PASS |
 | Authorization | PASS (enforced by a route-walking test) |
-| Chat safety | PASS, one FOLLOW-UP (`jyj-nm8`, P1, Codex env) |
+| Chat safety | PASS |
 | Uploads | PASS, one FOLLOW-UP (`jyj-0qs`, audio magic bytes) |
 | Headers | PASS (checked with curl against a running stack) |
 | Secrets | PASS |
@@ -60,7 +60,7 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
   is stored (`services/auth.py:36-37,60-63`, `test_token_is_hashed_at_rest`).
 - [x] **PASS** Cookie `jyj_session`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`,
   `Max-Age` 30 days (`api/auth.py:37-46`, `test_login_success_sets_secure_cookie_and_me_works`).
-  `SESSION_COOKIE_SECURE=false` is refused in production (`config.py:62-63`).
+  `SESSION_COOKIE_SECURE=false` is refused in production (`config.py:64-65`).
 - [x] **PASS** TTL 30 days, sliding, refreshed at most hourly (`services/auth.py:13-14,84-89`,
   `test_session_slides_at_most_hourly`).
 - [x] **PASS** Logout deletes the session row and clears the cookie (`api/auth.py:119-124`,
@@ -122,15 +122,21 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
   `test_injection_in_user_text_cannot_break_out_of_the_request`.
 - [x] **PASS** `codex exec` argv: `--sandbox read-only`, `--ignore-user-config`,
   `--ignore-rules`, `--ephemeral`, empty temp `--cd`, never a bypass/full-auto flag
-  (`chat/provider.py:251-272`). Tests: `test_argv_is_locked_down_and_schema_is_written_to_the_run_dir`,
+  (`chat/provider.py:271-292`). Tests: `test_argv_is_locked_down_and_schema_is_written_to_the_run_dir`,
   `test_codex_argv_is_always_read_only_and_ignores_user_config`.
 - [x] **PASS** The app never reads `CODEX_HOME` contents: `CODEX_HOME` appears only in the
   compose env and provider docstrings; no reference to `auth.json` or a codex-home path in
   `backend/src` (`test_app_code_never_opens_codex_home`).
-- [ ] **FOLLOW-UP `jyj-nm8`** (P1) The Codex subprocess inherits the full backend environment
-  (`chat/provider.py:430-433`), including `DATABASE_URL` (with the DB password) and
-  `SESSION_SECRET`. The read-only sandbox still allows reading env, so a prompt injection could
-  surface them in a reply. Needs an allowlisted env; owned by the chat hardening work.
+- [x] **PASS** (was FOLLOW-UP `jyj-nm8`) Codex subprocess environment is an allowlist, not
+  `os.environ` (`chat/provider.py:39-53,450-460`): `PATH`, a throwaway `HOME` (the per-run temp
+  dir), `CODEX_HOME`, `LANG`/`LC_ALL`/`TZ`, `SSL_CERT_FILE`/`SSL_CERT_DIR`, `NO_COLOR=1`, and
+  proxy variables only when `CODEX_FORWARD_PROXY_ENV=true` (`config.py:31-32`). Both
+  `codex login status` (`chat/provider.py:217-228`) and `codex exec` (`chat/provider.py:322`)
+  use it, so `DATABASE_URL`, `SESSION_SECRET`, `POSTGRES_*` and other app settings never reach
+  the model's sandbox. whisper-cli and ffmpeg get `PATH`, a per-job `HOME` and `LC_ALL` only
+  (`stt/transcriber.py:238,258-264`). Tests: `test_codex_processes_never_see_app_secrets` (fake
+  binary dumps its env for both calls), `test_environment_is_an_allowlist`,
+  `test_proxy_env_is_forwarded_only_when_enabled`, `test_children_do_not_inherit_app_secrets`.
 - [x] **PASS** Tool surface (`build_registry()`): reads `search_recipes`, `get_recipe`,
   `list_ingredients`, `get_stock`, `get_plan`, `preview_shopping`; writes `create_recipe`,
   `update_recipe`, `create_ingredient`, `adjust_stock`, `plan_meal`, `move_meal`,
@@ -194,7 +200,7 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
   gitleaks v8.30.1: 44 commits scanned, ~1.95 MB, no leaks found
   ```
 - [x] **PASS** `.env.example` has placeholders only (`change-me`), and production refuses to
-  start with them or with a short session secret (`backend/src/jyj/config.py:46-67`).
+  start with them or with a short session secret (`backend/src/jyj/config.py:48-69`).
 - [x] **PASS** `codex-home` and `caddy-data` are never backed up: the backup service mounts
   only `photos:ro` and `BACKUP_DIR` (`docker-compose.yml:157-159`, comment at `:138`); the `chat-purge` service mounts no volumes.
   Neither path is logged anywhere in `backend/src` or `deploy/`.
@@ -203,9 +209,9 @@ manual parts with the commands in [How to re-verify](#how-to-re-verify).
 
 - [x] **PASS** Nothing sensitive at INFO: auth logs are `login ok user_id=N`, `login failed`,
   `login throttled` (`api/auth.py:101,110,115`); prompts, answers and transcripts are DEBUG only
-  (`chat/provider.py:293,384`, `stt/transcriber.py:165`); settings errors hide inputs
+  (`chat/provider.py:314,405`, `stt/transcriber.py:165`); settings errors hide inputs
   (`config.py:18`). `DB_ECHO=true`, which would log SQL parameters (password and token hashes,
-  chat text) at INFO, is now refused in production (`config.py:64-66`, new in this pass,
+  chat text) at INFO, is now refused in production (`config.py:66-68`, new in this pass,
   `test_sql_echo_is_refused_in_production`).
 - [x] **PASS** `test_login_and_chat_turn_log_no_secrets_at_info` captures every log record at
   INFO and above during a good login, a bad login, a chat turn with the fake provider, a

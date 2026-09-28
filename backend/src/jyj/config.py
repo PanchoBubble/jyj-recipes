@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     codex_binary: str = "codex"
     codex_model: str | None = None
     codex_timeout_seconds: float = Field(default=90.0, gt=0)
+    # Forward *_PROXY vars to the Codex CLI; off since proxy URLs can hold credentials.
+    codex_forward_proxy_env: bool = False
     # Postgres statement_timeout for each chat tool call, so a slow query cannot stall a turn.
     chat_tool_timeout_seconds: float = Field(default=3.0, gt=0, le=60)
 
