@@ -75,9 +75,9 @@ services:
     image: jyj-web
     restart: unless-stopped
     environment:
-      JYJ_HOSTNAME: ${JYJ_HOSTNAME:-recipes.home.arpa}
+      JYJ_HOSTNAME: ${JYJ_HOSTNAME:-recipes.local}
       JYJ_LAN_IP: ${JYJ_LAN_IP:-}
-      JYJ_DEFAULT_SNI: ${JYJ_LAN_IP:-${JYJ_HOSTNAME:-recipes.home.arpa}}
+      JYJ_DEFAULT_SNI: ${JYJ_LAN_IP:-${JYJ_HOSTNAME:-recipes.local}}
       JYJ_TLS: ${JYJ_TLS:-internal}
       JYJ_DNS_PROVIDER: ${JYJ_DNS_PROVIDER:-}
       JYJ_DNS_API_TOKEN: ${JYJ_DNS_API_TOKEN:-}

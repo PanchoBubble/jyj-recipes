@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish the jyj-recipes LAN hostname with mDNS
+Documentation=https://avahi.org/
+After=avahi-daemon.service network-online.target
+Requires=avahi-daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/jyj-mdns-publish recipes.local auto
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

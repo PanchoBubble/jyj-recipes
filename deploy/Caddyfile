@@ -1,11 +1,11 @@
 # Site addresses and TLS mode come from the environment (see .env.example and docs/TLS.md).
-#   JYJ_HOSTNAME  LAN hostname devices use, default recipes.home.arpa
+#   JYJ_HOSTNAME  LAN hostname devices use, default recipes.local
 #   JYJ_LAN_IP    optional: also serve https://<ip> (internal cert with an IP SAN)
 #   JYJ_TLS       internal (default, option A) | tailscale (option C) | dns (option B, needs a DNS plugin build)
 
 {
 	# Clients connecting to https://<ip> send no SNI; without this Caddy has no cert to pick.
-	default_sni {$JYJ_DEFAULT_SNI:recipes.home.arpa}
+	default_sni {$JYJ_DEFAULT_SNI:recipes.local}
 }
 
 (tls-internal) {
@@ -91,7 +91,7 @@
 }
 
 # localhost and 127.0.0.1 keep the container healthcheck and on-Pi curl working.
-{$JYJ_HOSTNAME:recipes.home.arpa} {$JYJ_LAN_IP} localhost 127.0.0.1 {
+{$JYJ_HOSTNAME:recipes.local} {$JYJ_LAN_IP} localhost 127.0.0.1 {
 	import tls-{$JYJ_TLS:internal}
 	import app
 }

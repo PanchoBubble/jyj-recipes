@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
-.PHONY: env-check up down build logs test-db-up test-db-down test-db-prune ca-export whisper-download backup-now restore backup-drill
+.PHONY: env-check up down build logs test-db-up test-db-down test-db-prune ca-export mdns-install whisper-download backup-now restore backup-drill
 
 BACKEND := backend
 FRONTEND := frontend
@@ -90,6 +90,12 @@ test-db-down:
 hours ?= 3
 test-db-prune:
 	cd $(BACKEND) && uv run python tests/testdb.py prune --older-than-hours $(hours)
+
+mdns-install:
+	sudo install -m 0755 deploy/mdns/jyj-mdns-publish /usr/local/bin/jyj-mdns-publish
+	sudo install -m 0644 deploy/mdns/jyj-mdns.service /etc/systemd/system/jyj-mdns.service
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now jyj-mdns.service
 
 ca-export:
 	$(COMPOSE) cp web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt

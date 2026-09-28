@@ -6,7 +6,7 @@ Default is **option A**: Caddy's built-in CA (`tls internal`) issues a certifica
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `JYJ_HOSTNAME` | `recipes.home.arpa` | Name devices type into the browser |
+| `JYJ_HOSTNAME` | `recipes.local` | Name devices type into the browser |
 | `JYJ_LAN_IP` | empty | Also serve `https://<ip>` (see [IP access](#ip-access)) |
 | `JYJ_TLS` | `internal` | `internal` (A), `dns` (B), `tailscale` (C) |
 
@@ -26,14 +26,13 @@ The CA and issued certs live in the `caddy-data` volume (`/data` in the web cont
 
 ## 2. Point devices at the hostname
 
-`.home.arpa` is reserved for home networks (RFC 8375), so it never collides with a real domain. Give the Pi a DHCP reservation first so its IP stays fixed. Then pick one:
+Default: **mDNS**. `make mdns-install` (on the Pi, needs sudo) installs `jyj-mdns.service`, which publishes `recipes.local` via Avahi for the address on the Pi's default-route interface (IPv4 and IPv6), so it follows DHCP changes. No router setup. Works on iOS, macOS, Linux and Android 12+; some older Android builds and Windows setups resolve `.local` unreliably, so use one of these instead there:
 
-- **Router DNS**: add a local DNS / static host entry `recipes.home.arpa -> <Pi IP>`. Every device on the Wi-Fi picks it up. Best option if the router supports it.
+- **Router DNS**: a local DNS / static host entry `recipes.home.arpa -> <Pi IP>` (give the Pi a DHCP reservation first), then set `JYJ_HOSTNAME=recipes.home.arpa`. `.home.arpa` is reserved for home networks (RFC 8375).
 - **Pi-hole / AdGuard Home**: Local DNS -> DNS Records -> `recipes.home.arpa` -> `<Pi IP>`.
-- **Hosts file** (laptops only; phones can't edit it): add `<Pi IP> recipes.home.arpa` to `/etc/hosts` or `C:\Windows\System32\drivers\etc\hosts`.
-- **mDNS alternative**: the Pi already answers as `<pi-hostname>.local` via Avahi. Set `JYJ_HOSTNAME=<pi-hostname>.local` and skip DNS setup. Works on iOS, macOS and recent Android; some Android builds and Windows setups resolve `.local` unreliably.
+- **Hosts file** (laptops only; phones can't edit it): `<Pi IP> recipes.home.arpa`.
 
-Check from a laptop: `curl --cacert caddy-root.crt https://recipes.home.arpa/api/healthz` should print `{"status":"ok"}`.
+Check from a laptop: `curl --cacert caddy-root.crt https://recipes.local/api/healthz` should print `{"status":"ok"}`.
 
 ### IP access
 
@@ -69,7 +68,7 @@ Firefox uses its own store and ignores user CAs by default. Enable: Settings -> 
 
 ## 4. Verify
 
-1. Open `https://recipes.home.arpa`: padlock, no warning.
+1. Open `https://recipes.local`: padlock, no warning.
 2. Check a secure context. On a desktop, open DevTools console and run `window.isSecureContext` (must be `true`). On a phone, use remote debugging: Safari Web Inspector (iPhone: Settings -> Apps -> Safari -> Advanced -> Web Inspector, then Mac Safari -> Develop menu) or `chrome://inspect` on a desktop with the Android phone on USB debugging.
 3. The voice button stops showing the "needs HTTPS" message.
 

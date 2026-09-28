@@ -31,7 +31,7 @@ Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/
 
 ## HTTPS on the LAN
 
-Caddy serves the app on `https://$JYJ_HOSTNAME` (default `recipes.home.arpa`) with its own internal CA; HTTP redirects to HTTPS. Voice input needs this secure context. Device DNS and CA install steps, plus the DNS-01 and Tailscale alternatives, are in [docs/TLS.md](docs/TLS.md).
+Caddy serves the app on `https://$JYJ_HOSTNAME` (default `recipes.local`) with its own internal CA; HTTP redirects to HTTPS. Voice input needs this secure context. Device DNS and CA install steps, plus the DNS-01 and Tailscale alternatives, are in [docs/TLS.md](docs/TLS.md).
 
 ## Database
 
