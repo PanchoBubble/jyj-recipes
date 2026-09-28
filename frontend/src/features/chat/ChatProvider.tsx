@@ -1,9 +1,16 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { createContext, use, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { useMe } from '@/features/auth/api'
 import { ApiError } from '@/lib/api'
 
-import { useConversation, type MessageInput } from './api'
+import {
+  chatKeys,
+  useConversation,
+  useCreateConversation,
+  type ConversationDetail,
+  type MessageInput,
+} from './api'
 import { useChatStream, type LiveTurn } from './useChatStream'
 
 export type ChatView = 'conversation' | 'list'
@@ -11,16 +18,22 @@ export type ChatView = 'conversation' | 'list'
 interface ChatState {
   open: boolean
   view: ChatView
+  /** The conversation on screen; null is a new chat that exists only locally until the first send. */
   conversationId: number | null
   live: LiveTurn | null
   /** The assistant is answering: the stream is open. */
   working: boolean
   /** Actions in the current conversation waiting for Confirm or Reject. */
   pendingCount: number
-  /** Opens the panel; a number switches to that conversation, null shows the recent list. */
+  /**
+   * Opens the panel. Without an argument it starts a new chat, unless the current one is still
+   * answering or has actions awaiting confirmation; a number opens that conversation.
+   */
   openChat: (conversationId?: number | null) => void
   closeChat: () => void
   showList: () => void
+  showConversation: () => void
+  startNewChat: () => void
   selectConversation: (conversationId: number) => void
   send: (text: string, source?: MessageInput) => Promise<void>
   stop: () => void
@@ -56,38 +69,22 @@ function writeStored(userId: number | undefined, conversationId: number | null) 
  * the calendar.
  */
 export function ChatProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const userId = useMe().data?.id
   const [open, setOpen] = useState(false)
   const [chosenId, setChosenId] = useState(() => readStored(userId))
-  const [chosenView, setView] = useState<ChatView>('conversation')
-  const { live, send, stop } = useChatStream(chosenId)
+  const [view, setView] = useState<ChatView>('conversation')
+  const { live, send: stream, stop, reset } = useChatStream()
   const conversation = useConversation(chosenId)
+  const { mutateAsync: createConversation } = useCreateConversation()
   const working = Boolean(live?.streaming)
 
-  // A remembered chat can be gone (retention purge, other device): fall back to the list.
+  // A remembered chat can be gone (retention purge, other device): start fresh instead.
   const missing = conversation.error instanceof ApiError && conversation.error.status === 404
   const conversationId = missing ? null : chosenId
-  const view: ChatView = conversationId === null ? 'list' : chosenView
   useEffect(() => {
     if (missing) writeStored(userId, null)
   }, [missing, userId])
-
-  const choose = useCallback(
-    (next: number | null) => {
-      setChosenId(next)
-      setView(next === null ? 'list' : 'conversation')
-      writeStored(userId, next)
-    },
-    [userId],
-  )
-
-  const openChat = useCallback(
-    (next?: number | null) => {
-      if (next !== undefined) choose(next)
-      setOpen(true)
-    },
-    [choose],
-  )
 
   const pendingCount = useMemo(() => {
     const ids = new Set<number>()
@@ -100,6 +97,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return ids.size
   }, [conversation.data, live])
 
+  const choose = useCallback(
+    (next: number | null) => {
+      if (next !== live?.conversationId) reset()
+      setChosenId(next)
+      setView('conversation')
+      writeStored(userId, next)
+    },
+    [userId, live?.conversationId, reset],
+  )
+
+  const startNewChat = useCallback(() => {
+    if (working) return
+    choose(null)
+  }, [working, choose])
+
+  const openChat = useCallback(
+    (next?: number | null) => {
+      if (next !== undefined) choose(next)
+      else if (working || pendingCount > 0) setView('conversation')
+      else choose(null)
+      setOpen(true)
+    },
+    [choose, working, pendingCount],
+  )
+
+  const createForTurn = useCallback(async () => {
+    const created = await createConversation()
+    const empty: ConversationDetail = { ...created, messages: [], actions: [] }
+    queryClient.setQueryData(chatKeys.conversation(created.id), empty)
+    setChosenId(created.id)
+    writeStored(userId, created.id)
+    return created.id
+  }, [createConversation, queryClient, userId])
+
+  const send = useCallback(
+    (text: string, source?: MessageInput) => stream(conversationId ?? createForTurn, text, source),
+    [stream, conversationId, createForTurn],
+  )
+
   const value = useMemo<ChatState>(
     () => ({
       open,
@@ -111,6 +147,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       openChat,
       closeChat: () => setOpen(false),
       showList: () => setView('list'),
+      showConversation: () => setView('conversation'),
+      startNewChat,
       selectConversation: (next) => {
         if (working && next !== conversationId) return
         choose(next)
@@ -118,7 +156,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       send,
       stop,
     }),
-    [open, view, conversationId, live, working, pendingCount, openChat, choose, send, stop],
+    [open, view, conversationId, live, working, pendingCount, openChat, startNewChat, choose, send, stop],
   )
 
   return <ChatContext value={value}>{children}</ChatContext>

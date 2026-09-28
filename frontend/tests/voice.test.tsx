@@ -322,6 +322,7 @@ describe('voice recorder', () => {
     server.use(http.get(`${API}/chat/conversations`, () => HttpResponse.json([])))
     const user = userEvent.setup()
     renderApp('/chat')
+    await user.click(await screen.findByRole('button', { name: 'Chat history' }))
     const toggle = await screen.findByRole('checkbox', {
       name: /Send voice messages automatically when confident/,
     })

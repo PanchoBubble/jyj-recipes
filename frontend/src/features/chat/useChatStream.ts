@@ -21,6 +21,8 @@ export interface TurnError {
 
 /** The turn being streamed, shown until the stored conversation catches up. */
 export interface LiveTurn {
+  /** Null until a new chat has been created on the server for this turn. */
+  conversationId: number | null
   text: string
   source: MessageInput
   streaming: boolean
@@ -40,7 +42,15 @@ const LOST: TurnError = {
   message: 'The connection was lost before the assistant answered. Please try again.',
 }
 
-export function useChatStream(conversationId: number | null) {
+const NOT_CREATED: TurnError = {
+  code: 'create_failed',
+  message: 'Could not start a new chat. Please try again.',
+}
+
+/** A conversation id, or a way to create one when the turn is the first of a new chat. */
+export type SendTarget = number | (() => Promise<number>)
+
+export function useChatStream() {
   const queryClient = useQueryClient()
   const [live, setLive] = useState<LiveTurn | null>(null)
   const controller = useRef<AbortController | null>(null)
@@ -49,21 +59,52 @@ export function useChatStream(conversationId: number | null) {
     () => () => {
       controller.current?.abort()
       controller.current = null
-      setLive(null)
     },
-    [conversationId],
+    [],
   )
 
+  const reset = useCallback(() => {
+    controller.current?.abort()
+    controller.current = null
+    setLive(null)
+  }, [])
+
   const send = useCallback(
-    async (text: string, source: MessageInput = { input: 'text' }) => {
-      if (conversationId === null) return
+    async (target: SendTarget, text: string, source: MessageInput = { input: 'text' }) => {
       controller.current?.abort()
       const own = new AbortController()
       controller.current = own
       const update = (patch: (turn: LiveTurn) => Partial<LiveTurn>) => {
         if (!own.signal.aborted) setLive((turn) => (turn ? { ...turn, ...patch(turn) } : turn))
       }
-      setLive({ text, source, streaming: true, status: 'Thinking...', actions: [], reply: null, error: null })
+      const initial = typeof target === 'number' ? target : null
+      setLive({
+        conversationId: initial,
+        text,
+        source,
+        streaming: true,
+        status: 'Thinking...',
+        actions: [],
+        reply: null,
+        error: null,
+      })
+
+      let conversationId: number
+      if (typeof target === 'number') {
+        conversationId = target
+      } else {
+        try {
+          conversationId = await target()
+        } catch (caught) {
+          if (own.signal.aborted) return
+          if (isUnauthorized(caught)) queryClient.setQueryData(meQueryKey, null)
+          if (controller.current === own) controller.current = null
+          update(() => ({ streaming: false, status: null, error: NOT_CREATED }))
+          return
+        }
+        if (own.signal.aborted) return
+        update(() => ({ conversationId }))
+      }
 
       let error: TurnError | null = null
       let done = false
@@ -112,7 +153,7 @@ export function useChatStream(conversationId: number | null) {
       await queryClient.invalidateQueries({ queryKey: chatKeys.conversation(conversationId) })
       if (!own.signal.aborted) setLive(null)
     },
-    [conversationId, queryClient],
+    [queryClient],
   )
 
   const stop = useCallback(() => {
@@ -130,5 +171,5 @@ export function useChatStream(conversationId: number | null) {
     )
   }, [])
 
-  return { live, send, stop }
+  return { live, send, stop, reset }
 }

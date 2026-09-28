@@ -6,9 +6,10 @@ import {
   ShoppingCart,
   type LucideIcon,
 } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { Link, NavLink, Outlet, useMatches } from 'react-router'
 
+import { useChatBubbleBottom } from '@/features/chat/bubbleOffset'
 import { ChatLauncher } from '@/features/chat/ChatLauncher'
 import { ChatPanel } from '@/features/chat/ChatPanel'
 import { ChatProvider } from '@/features/chat/ChatProvider'
@@ -16,6 +17,8 @@ import { cn } from '@/lib/utils'
 
 export interface RouteHandle {
   title?: string
+  /** Where the chat bubble floats on this route, as a CSS length from the viewport bottom. */
+  chatBubbleBottom?: string
 }
 
 const tabs: { to: string; label: string; icon: LucideIcon }[] = [
@@ -25,12 +28,15 @@ const tabs: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/stock', label: 'Stock', icon: Package },
 ]
 
-function usePageTitle() {
-  const matches = useMatches()
-  const title = matches
-    .map((m) => (m.handle as RouteHandle | undefined)?.title)
+function useHandle<K extends keyof RouteHandle>(key: K): RouteHandle[K] | undefined {
+  return useMatches()
+    .map((m) => (m.handle as RouteHandle | undefined)?.[key])
     .filter(Boolean)
     .at(-1)
+}
+
+function usePageTitle() {
+  const title = useHandle('title')
   useEffect(() => {
     document.title = title ? `${title} · jyj recipes` : 'jyj recipes'
   }, [title])
@@ -39,10 +45,14 @@ function usePageTitle() {
 
 export function AppLayout() {
   const title = usePageTitle()
+  const bubbleBottom = useChatBubbleBottom(useHandle('chatBubbleBottom'))
 
   return (
     <ChatProvider>
-      <div className="mx-auto flex min-h-svh w-full max-w-2xl flex-col">
+      <div
+        className="mx-auto flex min-h-svh w-full max-w-2xl flex-col"
+        style={{ '--chat-bubble-bottom': bubbleBottom } as CSSProperties}
+      >
         <header className="sticky top-0 z-10 border-b bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="flex h-14 items-center justify-between gap-2 pr-[max(0.25rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]">
             <h1 className="truncate text-lg font-semibold">{title}</h1>
@@ -56,7 +66,7 @@ export function AppLayout() {
           </div>
         </header>
 
-        <main className="flex-1 px-[max(1rem,env(safe-area-inset-left))] pt-4 pb-[calc(9rem+env(safe-area-inset-bottom))]">
+        <main className="flex-1 px-[max(1rem,env(safe-area-inset-left))] pt-4 pb-[calc(10rem+env(safe-area-inset-bottom))]">
           <Outlet />
         </main>
 

@@ -1,5 +1,5 @@
 import { LoaderCircle, MessageCircle } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Navigate, useParams } from 'react-router'
 
 import { useDragging } from '@/lib/dragging'
@@ -15,44 +15,12 @@ function launcherLabel(working: boolean, pending: number) {
 }
 
 /**
- * Height from the viewport bottom to the top of the highest `[data-bottom-dock]` element (a
- * fixed tray above the tab bar), so the bubble can sit above it; null when there is none.
+ * Floating chat button, bottom right at `--chat-bubble-bottom` (set by the layout); steps aside
+ * while something is dragged.
  */
-function useDockClearance(): number | null {
-  const [clearance, setClearance] = useState<number | null>(null)
-
-  useEffect(() => {
-    const resizes = typeof ResizeObserver === 'function' ? new ResizeObserver(() => measure()) : null
-    let observed: Element[] = []
-    function measure() {
-      const docks = Array.from(document.querySelectorAll('[data-bottom-dock]'))
-      if (docks.some((dock, i) => dock !== observed[i]) || docks.length !== observed.length) {
-        resizes?.disconnect()
-        docks.forEach((dock) => resizes?.observe(dock))
-        observed = docks
-      }
-      const top = Math.min(...docks.map((dock) => dock.getBoundingClientRect().top))
-      setClearance(docks.length && Number.isFinite(top) ? Math.max(0, window.innerHeight - top) : null)
-    }
-    const mutations = new MutationObserver(measure)
-    mutations.observe(document.body, { childList: true, subtree: true })
-    window.addEventListener('resize', measure)
-    measure()
-    return () => {
-      mutations.disconnect()
-      resizes?.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [])
-
-  return clearance
-}
-
-/** Floating chat button, bottom right above the tab bar; steps aside while something is dragged. */
 export function ChatLauncher() {
   const { open, working, pendingCount, openChat } = useChat()
   const dragging = useDragging()
-  const clearance = useDockClearance()
   if (dragging) return null
 
   return (
@@ -63,8 +31,7 @@ export function ChatLauncher() {
       aria-expanded={open}
       data-working={working || undefined}
       onClick={() => openChat()}
-      style={clearance === null ? undefined : { bottom: `calc(${clearance}px + 1rem)` }}
-      className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[calc(5rem+1px+env(safe-area-inset-bottom))] z-20 inline-flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-95"
+      className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-(--chat-bubble-bottom) z-20 inline-flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-95"
     >
       {working && (
         <span className="absolute inset-0 animate-ping rounded-full bg-primary/40" aria-hidden />

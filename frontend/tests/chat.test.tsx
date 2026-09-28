@@ -1,11 +1,17 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 
+import { createMemoryRouter } from 'react-router'
+
+import App from '@/App'
+import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { plannedMealKeys } from '@/features/calendar/api'
 import type { ActionOut, ChatHealth, ConversationDetail } from '@/features/chat/api'
+import { DEFAULT_BUBBLE_BOTTOM } from '@/features/chat/bubbleOffset'
 import { createSseParser, type SseMessage } from '@/features/chat/sse'
 import { setDragging } from '@/lib/dragging'
+import { createQueryClient } from '@/lib/query'
 import { shoppingKeys } from '@/features/shopping/api'
 import { stockKeys } from '@/features/stock/api'
 
@@ -142,22 +148,84 @@ const STORED = 'jyj-chat-conversation:1'
 beforeEach(() => window.localStorage.clear())
 
 describe('chat', () => {
-  it('lists recent chats and starts a new one', async () => {
+  it('opens a new empty chat and makes no conversation until the first send', async () => {
+    const calls: string[] = []
+    const turn = liveStream()
+    let stored = detail({ id: 12 })
     server.use(
       ...chatHandlers(),
-      http.post(`${API}/chat/conversations`, () =>
-        HttpResponse.json({ id: 7, title: null, created_at: at, updated_at: at }, { status: 201 }),
-      ),
+      http.get(`${API}/chat/conversations/12`, () => HttpResponse.json(stored)),
+      http.post(`${API}/chat/conversations`, () => {
+        calls.push('create')
+        return HttpResponse.json({ id: 12, title: null, created_at: at, updated_at: at }, { status: 201 })
+      }),
+      http.post(`${API}/chat/conversations/12/messages`, async ({ request }) => {
+        calls.push(`send ${JSON.stringify(await request.json())}`)
+        return turn.response()
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp('/calendar')
+
+    await user.click(await screen.findByRole('button', { name: 'Open chat' }))
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    const welcome = within(panel).getByRole('region', { name: 'New chat' })
+    expect(within(welcome).getByRole('button', { name: 'Plan dinners for this week' })).toBeInTheDocument()
+    expect(within(welcome).getByRole('button', { name: 'Add 1 kg flour to stock' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('list', { name: 'Messages' })).not.toBeInTheDocument()
+
+    await user.click(within(welcome).getByRole('button', { name: 'What do I need to buy for the weekend?' }))
+    const box = within(panel).getByRole('textbox', { name: 'Message' })
+    expect(box).toHaveValue('What do I need to buy for the weekend?')
+    expect(box).toHaveFocus()
+    expect(calls).toEqual([])
+    expect(window.localStorage.getItem(STORED)).toBeNull()
+
+    await user.click(within(panel).getByRole('button', { name: 'Send' }))
+    expect(await within(panel).findByText('Thinking...')).toBeInTheDocument()
+    expect(calls).toEqual(['create', 'send {"text":"What do I need to buy for the weekend?"}'])
+    expect(window.localStorage.getItem(STORED)).toBe('12')
+
+    stored = detail({
+      id: 12,
+      messages: [
+        message(1, 'user', 'What do I need to buy for the weekend?'),
+        message(2, 'assistant', 'Flour and eggs.'),
+      ],
+    })
+    act(() => {
+      turn.write(sse('assistant', { message_id: 2, reply: 'Flour and eggs.' }))
+      turn.write(sse('done', { user_message_id: 1, assistant_message_id: 2 }))
+      turn.close()
+    })
+    await waitFor(() => expect(within(panel).getAllByText('Flour and eggs.')).toHaveLength(1))
+    expect(within(panel).getAllByText('What do I need to buy for the weekend?')).toHaveLength(1)
+  })
+
+  it('opens history from the header, selects a chat and goes back', async () => {
+    server.use(
+      ...chatHandlers({ conversation: () => detail({ messages: [message(1, 'assistant', 'Pasta on Friday.')] }) }),
     )
     const user = userEvent.setup()
     const { router } = renderApp('/chat')
 
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
-    expect(await within(panel).findByRole('button', { name: /Pasta plans/ })).toBeInTheDocument()
-    await user.click(within(panel).getByRole('button', { name: 'New chat' }))
-    expect(await within(panel).findByRole('textbox', { name: 'Message' })).toBeInTheDocument()
-    expect(window.localStorage.getItem(STORED)).toBe('7')
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
     expect(router.state.location.pathname).toBe('/calendar')
+    expect(within(panel).getByRole('region', { name: 'New chat' })).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: 'Chat history' }))
+    expect(within(panel).getByText('Recent chats')).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: 'Back to chat' }))
+    expect(within(panel).getByRole('region', { name: 'New chat' })).toBeInTheDocument()
+
+    await user.click(within(panel).getByRole('button', { name: 'Chat history' }))
+    await user.click(await within(panel).findByRole('button', { name: /Pasta plans/ }))
+    expect(await within(panel).findByText('Pasta on Friday.')).toBeInTheDocument()
+    expect(window.localStorage.getItem(STORED)).toBe('7')
+
+    await user.click(within(panel).getByRole('button', { name: 'New chat' }))
+    expect(within(panel).getByRole('region', { name: 'New chat' })).toBeInTheDocument()
+    expect(window.localStorage.getItem(STORED)).toBeNull()
   })
 
   it('switches conversations from the recent list', async () => {
@@ -176,8 +244,8 @@ describe('chat', () => {
     const user = userEvent.setup()
     renderApp('/chat/7')
 
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
-    await user.click(await within(panel).findByRole('button', { name: 'Recent chats' }))
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    await user.click(await within(panel).findByRole('button', { name: 'Chat history' }))
     await user.click(await within(panel).findByRole('button', { name: /Soup/ }))
     expect(await within(panel).findByText('Soup is planned.')).toBeInTheDocument()
     expect(window.localStorage.getItem(STORED)).toBe('8')
@@ -452,6 +520,11 @@ describe('chat', () => {
     expect(bubble).toHaveAccessibleName('Open chat, the assistant is working')
     expect(signal?.aborted).toBe(false)
 
+    await user.click(bubble)
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    expect(within(panel).getByText('Thinking...')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'New chat' })).toBeDisabled()
+
     stored = detail({
       messages: [message(1, 'user', 'Hello'), message(2, 'assistant', 'Hi there.')],
     })
@@ -461,9 +534,6 @@ describe('chat', () => {
       turn.close()
     })
     await waitFor(() => expect(bubble).toHaveAccessibleName('Open chat'))
-
-    await user.click(bubble)
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
     expect(await within(panel).findByText('Hi there.')).toBeInTheDocument()
     fetchSpy.mockRestore()
   })
@@ -475,7 +545,7 @@ describe('chat bubble', () => {
     const { router } = renderApp('/recipes')
     expect(await screen.findByRole('button', { name: 'Open chat' })).toBeInTheDocument()
     const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: 'Assistant' })).not.toBeInTheDocument()
 
     await act(() => router.navigate('/calendar'))
     expect(await screen.findByRole('button', { name: 'Open chat' })).toBeInTheDocument()
@@ -494,35 +564,61 @@ describe('chat bubble', () => {
 
     const bubble = await screen.findByRole('button', { name: 'Open chat' })
     await user.click(bubble)
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
-    expect(await within(panel).findByRole('button', { name: /Pasta plans/ })).toBeInTheDocument()
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    expect(within(panel).getByRole('region', { name: 'New chat' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Close chat' })).toBeInTheDocument()
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await waitFor(() => expect(bubble).toHaveFocus())
   })
 
-  it('remembers the conversation per user across navigation', async () => {
+  it('starts a new chat on reopen once the last one is settled, keeping it in history', async () => {
     server.use(
-      ...chatHandlers({ conversation: () => detail({ messages: [message(1, 'user', 'Hi from before')] }) }),
+      ...chatHandlers({
+        conversation: () => detail({ title: 'Pasta plans', messages: [message(1, 'user', 'Hi from before')] }),
+      }),
     )
     const user = userEvent.setup()
     const { router } = renderApp('/chat/7')
 
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
     expect(await within(panel).findByText('Hi from before')).toBeInTheDocument()
+    expect(within(panel).getByText('Pasta plans')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/calendar')
     expect(window.localStorage.getItem(STORED)).toBe('7')
 
     await user.click(within(panel).getByRole('button', { name: 'Close chat' }))
     await act(() => router.navigate('/recipes'))
     await user.click(await screen.findByRole('button', { name: 'Open chat' }))
-    expect(
-      await within(await screen.findByRole('dialog', { name: 'Chat' })).findByText('Hi from before'),
-    ).toBeInTheDocument()
+    const reopened = await screen.findByRole('dialog', { name: 'Assistant' })
+    expect(within(reopened).getByRole('region', { name: 'New chat' })).toBeInTheDocument()
+    expect(within(reopened).queryByText('Hi from before')).not.toBeInTheDocument()
+
+    await user.click(within(reopened).getByRole('button', { name: 'Chat history' }))
+    await user.click(await within(reopened).findByRole('button', { name: /Pasta plans/ }))
+    expect(await within(reopened).findByText('Hi from before')).toBeInTheDocument()
   })
 
-  it('falls back to the recent list when the remembered chat is gone', async () => {
+  it('reopens the last chat instead when it has an action awaiting confirmation', async () => {
+    window.localStorage.setItem(STORED, '7')
+    server.use(
+      ...chatHandlers({
+        conversation: () =>
+          detail({ messages: [message(2, 'assistant', 'Shall I delete it?')], actions: [actionOut()] }),
+      }),
+    )
+    const user = userEvent.setup()
+    renderApp('/calendar')
+
+    await user.click(await screen.findByRole('button', { name: 'Open chat, 1 action needs your OK' }))
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    const card = await within(panel).findByRole('article', { name: 'Delete recipe: Lasagne' })
+    expect(within(card).getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
+    expect(within(panel).queryByRole('region', { name: 'New chat' })).not.toBeInTheDocument()
+  })
+
+  it('starts a new chat when the remembered one is gone', async () => {
     window.localStorage.setItem(STORED, '99')
     server.use(
       ...chatHandlers(),
@@ -530,13 +626,22 @@ describe('chat bubble', () => {
         HttpResponse.json({ type: 'about:blank', title: 'Not Found', status: 404 }, { status: 404 }),
       ),
     )
+    renderApp('/chat/99')
+
+    const panel = await screen.findByRole('dialog', { name: 'Assistant' })
+    expect(await within(panel).findByRole('region', { name: 'New chat' })).toBeInTheDocument()
+    await waitFor(() => expect(window.localStorage.getItem(STORED)).toBeNull())
+  })
+
+  it('dims the page with a scrim that closes the sheet when tapped', async () => {
+    server.use(...chatHandlers())
     const user = userEvent.setup()
     renderApp('/calendar')
 
     await user.click(await screen.findByRole('button', { name: 'Open chat' }))
-    const panel = await screen.findByRole('dialog', { name: 'Chat' })
-    expect(await within(panel).findByRole('button', { name: /Pasta plans/ })).toBeInTheDocument()
-    await waitFor(() => expect(window.localStorage.getItem(STORED)).toBeNull())
+    await screen.findByRole('dialog', { name: 'Assistant' })
+    await user.click(screen.getByTestId('chat-scrim'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
   it('badges proposed actions waiting for confirmation', async () => {
@@ -548,20 +653,49 @@ describe('chat bubble', () => {
     expect(within(bubble).getByText('1')).toBeInTheDocument()
   })
 
-  it('sits above a bottom dock such as the recipe tray', async () => {
+  it('floats at --chat-bubble-bottom, raised above a bottom dock such as the recipe tray', async () => {
     server.use(...chatHandlers())
     renderApp('/recipes')
     const bubble = await screen.findByRole('button', { name: 'Open chat' })
-    expect(bubble.style.bottom).toBe('')
+    expect(bubble).toHaveClass('bottom-(--chat-bubble-bottom)')
+    expect(bubbleBottom(bubble)).toBe(DEFAULT_BUBBLE_BOTTOM)
 
     const dock = document.createElement('div')
     dock.dataset.bottomDock = ''
     dock.getBoundingClientRect = () => ({ top: window.innerHeight - 200 }) as DOMRect
     act(() => document.body.append(dock))
-    await waitFor(() => expect(bubble.style.bottom).toBe('calc(200px + 1rem)'))
+    await waitFor(() =>
+      expect(bubbleBottom(bubble)).toBe(`max(${DEFAULT_BUBBLE_BOTTOM}, calc(200px + 1rem))`),
+    )
 
     act(() => dock.remove())
-    await waitFor(() => expect(bubble.style.bottom).toBe(''))
+    await waitFor(() => expect(bubbleBottom(bubble)).toBe(DEFAULT_BUBBLE_BOTTOM))
+  })
+
+  it('takes the bubble offset from the route handle', async () => {
+    server.use(...chatHandlers())
+    const router = createMemoryRouter(
+      [
+        {
+          element: <AppLayout />,
+          children: [
+            { path: '/plain', element: <p>plain</p> },
+            {
+              path: '/raised',
+              element: <p>raised</p>,
+              handle: { chatBubbleBottom: '12rem' } satisfies RouteHandle,
+            },
+          ],
+        },
+      ],
+      { initialEntries: ['/raised'] },
+    )
+    render(<App router={router} queryClient={createQueryClient()} />)
+
+    const bubble = await screen.findByRole('button', { name: 'Open chat' })
+    expect(bubbleBottom(bubble)).toBe('12rem')
+    await act(() => router.navigate('/plain'))
+    expect(bubbleBottom(bubble)).toBe(DEFAULT_BUBBLE_BOTTOM)
   })
 
   it('steps aside while a calendar drag is in progress', async () => {
@@ -576,6 +710,12 @@ describe('chat bubble', () => {
     expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument()
   })
 })
+
+function bubbleBottom(bubble: HTMLElement) {
+  return bubble
+    .closest<HTMLElement>('[style*="--chat-bubble-bottom"]')
+    ?.style.getPropertyValue('--chat-bubble-bottom')
+}
 
 function streamSignal(spy: { mock: { calls: unknown[][] } }) {
   const call = spy.mock.calls.find(([input]) => String(input).endsWith('/messages'))

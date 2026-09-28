@@ -1,5 +1,5 @@
 import { LoaderCircle, SendHorizontal, Square, X } from 'lucide-react'
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,6 +23,7 @@ export function Composer({
   onSend,
   onStop,
   voiceAvailable = false,
+  initialText = '',
 }: {
   disabled: boolean
   streaming: boolean
@@ -30,13 +31,18 @@ export function Composer({
   onStop: () => void
   /** Speech to text is ready on the server; the mic button is hidden otherwise. */
   voiceAvailable?: boolean
+  /** Starts the box with this text and focuses it, e.g. a picked suggestion. */
+  initialText?: string
 }) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText)
   const [source, setSource] = useState<MessageInput>(TYPED)
   const [lowConfidence, setLowConfidence] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [support] = useState(voiceSupport)
   const box = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (initialText) box.current?.focus()
+  }, [initialText])
   const canSend = !disabled && !streaming && text.trim().length > 0
 
   const reset = () => {
@@ -86,7 +92,7 @@ export function Composer({
   return (
     <form
       data-vaul-no-drag
-      className="shrink-0 border-t bg-background"
+      className="shrink-0 border-t bg-popover"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
