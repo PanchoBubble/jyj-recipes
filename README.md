@@ -35,7 +35,7 @@ Caddy serves the app on `https://$JYJ_HOSTNAME` (default `recipes.home.arpa`) wi
 
 ## Database
 
-Settings load from env (and `.env`) via `jyj.config.Settings`. Backend tests use `TEST_DATABASE_URL` (default `postgresql+psycopg://jyj:jyj@127.0.0.1:55432/jyj_test`, the compose `db-test` service), run migrations once per session and roll back every test. Import new model modules in `backend/src/jyj/models/__init__.py` so autogenerate sees them.
+Settings load from env (and `.env`) via `jyj.config.Settings`. Backend tests use `TEST_DATABASE_URL` (default `postgresql+psycopg://jyj:jyj@127.0.0.1:55432/jyj_test`, the compose `db-test` service), create a fresh `jyj_test_<ts>_<pid>_<hex>` database on that server per pytest run (so parallel runs and worktrees never collide), run migrations into it once, roll back every test and drop it at the end. `TEST_DATABASE_REUSE=1` uses the URL's database as-is for debugging. `make test-db-prune` drops per-run databases older than 3 hours left by killed runs. Import new model modules in `backend/src/jyj/models/__init__.py` so autogenerate sees them.
 
 ## Accounts
 

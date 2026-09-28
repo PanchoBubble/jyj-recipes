@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
-.PHONY: env-check up down build logs test-db-up test-db-down ca-export whisper-download backup-now restore backup-drill
+.PHONY: env-check up down build logs test-db-up test-db-down test-db-prune ca-export whisper-download backup-now restore backup-drill
 
 BACKEND := backend
 FRONTEND := frontend
@@ -19,6 +19,7 @@ help:
 	@echo "make logs      follow stack logs"
 	@echo "make ca-export copy Caddy's LAN root CA to ./caddy-root.crt (stack must be up)"
 	@echo "make test-db-up / test-db-down  throwaway Postgres on 127.0.0.1:55432"
+	@echo "make test-db-prune [hours=3]  drop leftover per-run jyj_test_* databases"
 	@echo "make whisper-download [model=base]  fetch + verify a whisper model into the whisper-models volume"
 	@echo "make backup-now [label=pre-upgrade]  pg_dump + photo snapshot into BACKUP_DIR now"
 	@echo "make restore db=FILE photos=DIR force=yes  restore a backup (destroys current data, prompts)"
@@ -85,6 +86,10 @@ test-db-up:
 
 test-db-down:
 	$(COMPOSE) --profile test rm -sf db-test
+
+hours ?= 3
+test-db-prune:
+	cd $(BACKEND) && uv run python tests/testdb.py prune --older-than-hours $(hours)
 
 ca-export:
 	$(COMPOSE) cp web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt

@@ -5,18 +5,40 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Connection, Engine, create_engine, make_url
+from sqlalchemy import Connection, Engine, create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
+from testdb import (
+    admin_engine,
+    base_url,
+    create_database,
+    drop_database,
+    reuse_requested,
+    run_database_name,
+)
 
-DEFAULT_TEST_DATABASE_URL = "postgresql+psycopg://jyj:jyj@127.0.0.1:55432/jyj_test"
-TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
-# Point app settings at the test database before anything builds an engine, so a test
-# can never touch the dev database by accident.
+BASE_URL = base_url()
+REUSE = reuse_requested()
+RUN_URL = BASE_URL if REUSE else BASE_URL.set(database=run_database_name(BASE_URL.database or ""))
+TEST_DATABASE_URL = RUN_URL.render_as_string(hide_password=False)
+
+# Point app settings at this run's database before anything builds an engine, so a test
+# can never touch the dev database (or another run's database) by accident.
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+
+def _clear_app_caches() -> None:
+    from jyj.config import get_settings
+    from jyj.db import get_engine, get_sessionmaker
+
+    if get_engine.cache_info().currsize:
+        get_engine().dispose()
+    get_sessionmaker.cache_clear()
+    get_engine.cache_clear()
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")
@@ -28,22 +50,41 @@ def alembic_config() -> Config:
 
 
 @pytest.fixture(scope="session")
-def db_engine(alembic_config: Config) -> Iterator[Engine]:
-    engine = create_engine(TEST_DATABASE_URL, connect_args={"connect_timeout": 3})
+def test_database() -> Iterator[str]:
+    """Create this run's database on the test server and drop it afterwards."""
+    admin = admin_engine(BASE_URL)
     try:
-        with engine.connect():
+        with admin.connect():
             pass
     except OperationalError:
-        engine.dispose()
-        safe_url = make_url(TEST_DATABASE_URL).render_as_string(hide_password=True)
+        admin.dispose()
+        safe_url = BASE_URL.render_as_string(hide_password=True)
         pytest.skip(
             f"test database unreachable at {safe_url}; "
             "start it with `docker compose --profile test up -d db-test` "
             "or set TEST_DATABASE_URL"
         )
-    command.upgrade(alembic_config, "head")
-    yield engine
-    engine.dispose()
+    name = RUN_URL.database or ""
+    if not REUSE:
+        create_database(admin, name)
+    _clear_app_caches()
+    try:
+        yield name
+    finally:
+        _clear_app_caches()
+        if not REUSE:
+            drop_database(admin, name)
+        admin.dispose()
+
+
+@pytest.fixture(scope="session")
+def db_engine(test_database: str, alembic_config: Config) -> Iterator[Engine]:
+    engine = create_engine(TEST_DATABASE_URL, connect_args={"connect_timeout": 3})
+    try:
+        command.upgrade(alembic_config, "head")
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
