@@ -15,6 +15,8 @@ from jyj.api.shopping import router as shopping_lists_router
 from jyj.api.stock import router as stock_router
 from jyj.api.units import router as units_router
 from jyj.chat.router import router as chat_router
+from jyj.chat.voice import TRANSCRIBE_PATH, new_transcribe_limiter, transcribe_limit_bytes
+from jyj.chat.voice import router as voice_router
 from jyj.config import get_settings
 from jyj.services.errors import ServiceError
 from jyj.services.rate_limit import LoginRateLimiter
@@ -31,11 +33,14 @@ async def _service_error(_: Request, exc: ServiceError) -> JSONResponse:
 def create_app() -> FastAPI:
     app = FastAPI(title="jyj")
     app.state.login_limiter = LoginRateLimiter()
+    app.state.transcribe_limiter = new_transcribe_limiter()
     install_problem_handlers(app)
     app.add_exception_handler(ServiceError, _service_error)  # type: ignore[arg-type]
     app.add_middleware(CSRFHeaderMiddleware, prefix=API_PREFIX)
     app.add_middleware(
-        BodySizeLimitMiddleware, max_bytes=get_settings().photo_max_bytes + BODY_OVERHEAD_BYTES
+        BodySizeLimitMiddleware,
+        max_bytes=get_settings().photo_max_bytes + BODY_OVERHEAD_BYTES,
+        overrides={API_PREFIX + TRANSCRIBE_PATH: transcribe_limit_bytes()},
     )
     app.include_router(health_router)
     app.include_router(auth_router, prefix=API_PREFIX)
@@ -48,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(shopping_preview_router, prefix=API_PREFIX)
     app.include_router(shopping_lists_router, prefix=API_PREFIX)
     app.include_router(chat_router, prefix=API_PREFIX)
+    app.include_router(voice_router, prefix=API_PREFIX)
     return app
 
 

@@ -86,3 +86,37 @@ class LoginRateLimiter:
             oldest = sorted(self._users, key=lambda k: self._users[k].last_failure)[:excess]
             for name in oldest:
                 del self._users[name]
+
+
+class SlidingWindowLimiter:
+    """In-process per-key sliding window; valid because the backend runs a single worker."""
+
+    def __init__(
+        self,
+        *,
+        limit: int,
+        window: float = 60.0,
+        max_keys: int = 10_000,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.limit = limit
+        self.window = window
+        self.max_keys = max_keys
+        self.clock = clock
+        self._keys: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def acquire(self, key: str) -> float:
+        """Record an attempt. Returns 0 if allowed, else seconds until the next try."""
+        now = self.clock()
+        with self._lock:
+            if len(self._keys) >= self.max_keys:
+                for stale in [k for k, w in self._keys.items() if w[-1] <= now - self.window]:
+                    del self._keys[stale]
+            hits = self._keys.setdefault(key, deque())
+            while hits and hits[0] <= now - self.window:
+                hits.popleft()
+            if len(hits) >= self.limit:
+                return hits[0] + self.window - now
+            hits.append(now)
+            return 0.0

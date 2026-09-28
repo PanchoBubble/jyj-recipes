@@ -33,6 +33,7 @@ DEMUXERS: dict[str, str] = {
     "video/webm": "matroska",
     "audio/mp4": "mov",
     "audio/x-m4a": "mov",
+    "audio/aac": "aac",
     "audio/m4a": "mov",
     "video/mp4": "mov",
     "audio/ogg": "ogg",

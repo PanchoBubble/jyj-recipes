@@ -23,6 +23,7 @@ from jyj.chat.orchestrator import (
 )
 from jyj.chat.provider import CodexProvider
 from jyj.chat.tools import Registry, ToolStatus, build_registry
+from jyj.chat.voice import Stt, stt_health
 from jyj.config import get_settings
 from jyj.db import get_db, get_sessionmaker
 from jyj.models import ChatAction, ChatConversation, User
@@ -64,8 +65,8 @@ SessionFactory = Annotated[Callable[[], Session], Depends(get_chat_session_facto
 
 
 @router.get("/health")
-def chat_health(provider: Provider) -> dict[str, Any]:
-    return {"codex": provider.health().as_dict()}
+def chat_health(provider: Provider, transcriber: Stt) -> dict[str, Any]:
+    return {"codex": provider.health().as_dict(), "stt": stt_health(transcriber)}
 
 
 @router.post("/conversations", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)

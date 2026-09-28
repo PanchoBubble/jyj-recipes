@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     whisper_timeout_seconds: float = Field(default=30.0, gt=0)
     stt_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     stt_max_seconds: float = Field(default=60.0, gt=0)
+    stt_low_confidence: float = Field(default=0.5, ge=0, le=1)
+    stt_rate_limit_per_minute: int = Field(default=20, ge=1)
 
     photos_dir: Path = Path("/var/lib/jyj/photos")
     photo_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
