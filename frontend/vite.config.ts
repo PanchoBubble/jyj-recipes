@@ -14,8 +14,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
+        // The backend serves /api/v1 itself, same as behind Caddy, so no rewrite.
         target: process.env.VITE_API_PROXY ?? 'http://127.0.0.1:8000',
-        rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },
   },

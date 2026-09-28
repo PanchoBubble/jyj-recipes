@@ -1,11 +1,16 @@
-import { Button } from '@/components/ui/button'
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
+import { RouterProvider, type createBrowserRouter } from 'react-router'
 
-function App() {
+interface AppProps {
+  router: ReturnType<typeof createBrowserRouter>
+  queryClient: QueryClient
+}
+
+function App({ router, queryClient }: AppProps) {
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-4">
-      <h1 className="text-2xl font-semibold">jyj recipes</h1>
-      <Button>Get started</Button>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   )
 }
 
