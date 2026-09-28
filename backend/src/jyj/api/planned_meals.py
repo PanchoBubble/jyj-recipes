@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from jyj.api.auth import CurrentUser
 from jyj.db import get_db
 from jyj.models import StockSource
-from jyj.schemas.meal_plan import PlannedMealCreate, PlannedMealOut, PlannedMealUpdate
+from jyj.schemas.meal_plan import CookOut, PlannedMealCreate, PlannedMealOut, PlannedMealUpdate
 from jyj.services import planned_meals as service
 
 router = APIRouter(prefix="/planned-meals", tags=["planned-meals"])
@@ -49,3 +49,13 @@ def update_planned_meal(
 @router.delete("/{meal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_planned_meal(meal_id: int, user: CurrentUser, db: Db) -> None:
     service.delete_planned_meal(db, user, StockSource.UI, meal_id)
+
+
+@router.post("/{meal_id}/cook", response_model=CookOut)
+def cook_planned_meal(meal_id: int, user: CurrentUser, db: Db) -> CookOut:
+    return CookOut.build(service.cook(db, user, StockSource.UI, meal_id))
+
+
+@router.post("/{meal_id}/uncook", response_model=CookOut)
+def uncook_planned_meal(meal_id: int, user: CurrentUser, db: Db) -> CookOut:
+    return CookOut.build(service.uncook(db, user, StockSource.UI, meal_id))

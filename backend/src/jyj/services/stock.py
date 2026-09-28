@@ -105,6 +105,27 @@ def adjust_stock(
     )
 
 
+def apply_base_delta(
+    db: Session,
+    user: User,
+    source: StockSource,
+    ingredient_id: int,
+    delta_base: Decimal,
+    reason: StockReason,
+    *,
+    planned_meal_id: int | None = None,
+) -> StockChange:
+    """Like ``adjust_stock`` for an amount already in the ingredient's base unit.
+
+    Callers touching several ingredients in one transaction must call this in ascending
+    ``ingredient_id`` order so concurrent multi-ingredient writers cannot deadlock.
+    """
+    if delta_base == 0:
+        raise InvalidError("delta must not be zero")
+    item = _lock_item(db, ingredient_id)
+    return _apply(db, user, source, item, delta_base, reason, planned_meal_id=planned_meal_id)
+
+
 def set_stock(
     db: Session,
     user: User,
