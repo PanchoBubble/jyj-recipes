@@ -60,7 +60,7 @@ const DIMENSIONS: { value: MeasurableDimension; label: string }[] = [
   { value: 'count', label: 'Pieces' },
 ]
 
-const selectClass = 'w-full [&_select]:h-11 [&_select]:text-base'
+const selectClass = 'w-full [&_select]:h-11'
 
 export function RecipeEditorPage() {
   const { id } = useParams()
