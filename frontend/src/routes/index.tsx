@@ -6,6 +6,8 @@ import { RequireAuth } from '@/features/auth/RequireAuth'
 import { RecipeDetailPage } from '@/features/recipes/RecipeDetailPage'
 import { RecipeEditorPage } from '@/features/recipes/RecipeEditorPage'
 import { RecipesPage } from '@/features/recipes/RecipesPage'
+import { ShoppingListPage } from '@/features/shopping/ShoppingListPage'
+import { ShoppingPage } from '@/features/shopping/ShoppingPage'
 import { StockPage } from '@/features/stock/StockPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { SettingsPage } from '@/routes/SettingsPage'
@@ -48,7 +50,18 @@ export const routes: RouteObject[] = [
               },
             ],
           },
-          tab('shopping', 'Shopping'),
+          {
+            path: 'shopping',
+            handle: { title: 'Shopping' } satisfies RouteHandle,
+            children: [
+              { index: true, element: <ShoppingPage /> },
+              {
+                path: 'lists/:id',
+                element: <ShoppingListPage />,
+                handle: { title: 'Shopping list' } satisfies RouteHandle,
+              },
+            ],
+          },
           {
             path: 'stock',
             element: <StockPage />,
