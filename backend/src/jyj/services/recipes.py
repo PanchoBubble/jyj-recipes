@@ -11,10 +11,10 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from jyj.models import Ingredient, Recipe, RecipeIngredient, StockSource, User
+from jyj.models import Ingredient, PlannedMeal, Recipe, RecipeIngredient, StockSource, User
 from jyj.services import ingredients as ingredients_service
 from jyj.services.errors import InvalidError, NotFoundError, ServiceError
 from jyj.services.ingredients import _escape_like
@@ -43,9 +43,14 @@ REQUIRED_FIELDS = frozenset({"name", "default_servings", "ingredients", "archive
 
 ReferenceCheck = Callable[[Session, int], bool]
 
-# Register a check per table that points at recipes (e.g. planned meals); a referenced recipe
-# is archived on delete instead of being removed.
-REFERENCE_CHECKS: dict[str, ReferenceCheck] = {}
+
+def _planned(db: Session, recipe_id: int) -> bool:
+    return bool(db.scalar(select(exists().where(PlannedMeal.recipe_id == recipe_id))))
+
+
+# Register a check per table that points at recipes; a referenced recipe is archived on
+# delete instead of being removed.
+REFERENCE_CHECKS: dict[str, ReferenceCheck] = {"planned_meals": _planned}
 
 
 def find_references(db: Session, recipe_id: int) -> list[str]:
