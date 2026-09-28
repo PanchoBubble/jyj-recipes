@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend
+.PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
 
 BACKEND := backend
 FRONTEND := frontend
@@ -10,6 +10,8 @@ help:
 	@echo "make lint      ruff + eslint + tsc"
 	@echo "make format    ruff format + ruff --fix"
 	@echo "make test      pytest + vitest"
+	@echo "make migrate   alembic upgrade head against DATABASE_URL"
+	@echo "make migration name=...  autogenerate an alembic revision"
 
 install:
 	cd $(BACKEND) && uv sync --locked
@@ -42,3 +44,10 @@ test-backend:
 
 test-frontend:
 	cd $(FRONTEND) && npm test
+
+migrate:
+	cd $(BACKEND) && uv run alembic upgrade head
+
+migration:
+	@test -n "$(name)" || { echo 'usage: make migration name="add users"'; exit 1; }
+	cd $(BACKEND) && uv run alembic revision --autogenerate -m "$(name)"

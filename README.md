@@ -22,9 +22,15 @@ Design, stack and milestones: [docs/PLAN.md](docs/PLAN.md). Issues are tracked w
 | `make dev` | backend on http://127.0.0.1:8000 (reload), frontend on http://localhost:5173 |
 | `make lint` | ruff check + format check, eslint, tsc |
 | `make format` | ruff autofix + format |
-| `make test` | pytest and vitest |
+| `make test` | pytest and vitest (DB tests skip if the test database is unreachable) |
+| `make migrate` | `alembic upgrade head` against `DATABASE_URL` |
+| `make migration name="..."` | autogenerate an Alembic revision from the models |
 
-Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`.
+Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/readyz` also pings the database and returns 503 `{"status":"unavailable"}` with no details when it is down; it is for internal checks and is not proxied under `/api`.
+
+## Database
+
+Settings load from env (and `.env`) via `jyj.config.Settings`. Backend tests use `TEST_DATABASE_URL` (default `postgresql+psycopg://jyj:jyj@127.0.0.1:55432/jyj_test`, the compose `db-test` service), run migrations once per session and roll back every test. Import new model modules in `backend/src/jyj/models/__init__.py` so autogenerate sees them.
 
 ## Config
 
