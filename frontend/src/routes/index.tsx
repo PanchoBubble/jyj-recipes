@@ -3,6 +3,7 @@ import { Navigate, type RouteObject } from 'react-router'
 import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { StockPage } from '@/features/stock/StockPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { SettingsPage } from '@/routes/SettingsPage'
 
@@ -24,7 +25,11 @@ export const routes: RouteObject[] = [
           tab('calendar', 'Calendar'),
           tab('recipes', 'Recipes'),
           tab('shopping', 'Shopping'),
-          tab('stock', 'Stock'),
+          {
+            path: 'stock',
+            element: <StockPage />,
+            handle: { title: 'Stock' } satisfies RouteHandle,
+          },
           tab('chat', 'Chat'),
           {
             path: 'settings',

@@ -7,6 +7,7 @@ export interface Problem {
   title: string
   status: number
   detail?: string
+  [extension: string]: unknown
 }
 
 export class ApiError extends Error {
@@ -14,14 +15,18 @@ export class ApiError extends Error {
   readonly type: string
   readonly title: string
   readonly detail?: string
+  /** Extra RFC 9457 members, e.g. `references` on a 409 or `errors` on a 422. */
+  readonly extensions: Record<string, unknown>
 
   constructor(problem: Problem) {
-    super(problem.detail ?? problem.title)
+    const { type, title, status, detail, ...extensions } = problem
+    super(detail ?? title)
     this.name = 'ApiError'
-    this.status = problem.status
-    this.type = problem.type
-    this.title = problem.title
-    this.detail = problem.detail
+    this.status = status
+    this.type = type
+    this.title = title
+    this.detail = detail
+    this.extensions = extensions
   }
 
   get isClientError() {
@@ -50,6 +55,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   try {
     const data = (await response.json()) as Partial<Problem>
     return new ApiError({
+      ...data,
       type: typeof data.type === 'string' ? data.type : fallback.type,
       title: typeof data.title === 'string' ? data.title : fallback.title,
       status: typeof data.status === 'number' ? data.status : fallback.status,
