@@ -3,6 +3,9 @@ import { Navigate, type RouteObject } from 'react-router'
 import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { RecipeDetailPage } from '@/features/recipes/RecipeDetailPage'
+import { RecipeEditorPage } from '@/features/recipes/RecipeEditorPage'
+import { RecipesPage } from '@/features/recipes/RecipesPage'
 import { StockPage } from '@/features/stock/StockPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { SettingsPage } from '@/routes/SettingsPage'
@@ -23,7 +26,28 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Navigate to="/calendar" replace /> },
           tab('calendar', 'Calendar'),
-          tab('recipes', 'Recipes'),
+          {
+            path: 'recipes',
+            handle: { title: 'Recipes' } satisfies RouteHandle,
+            children: [
+              { index: true, element: <RecipesPage /> },
+              {
+                path: 'new',
+                element: <RecipeEditorPage />,
+                handle: { title: 'New recipe' } satisfies RouteHandle,
+              },
+              {
+                path: ':id',
+                element: <RecipeDetailPage />,
+                handle: { title: 'Recipe' } satisfies RouteHandle,
+              },
+              {
+                path: ':id/edit',
+                element: <RecipeEditorPage />,
+                handle: { title: 'Edit recipe' } satisfies RouteHandle,
+              },
+            ],
+          },
           tab('shopping', 'Shopping'),
           {
             path: 'stock',
