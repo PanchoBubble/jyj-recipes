@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     database_url: str = Field(default=DEV_DATABASE_URL, repr=False)
     db_echo: bool = False
     session_secret: SecretStr = SecretStr("dev-insecure-session-secret")
+    # Only turn off for plain-http local dev; browsers drop Secure cookies over http.
+    session_cookie_secure: bool = True
 
     @model_validator(mode="after")
     def _require_explicit_values_in_production(self) -> "Settings":
@@ -34,6 +36,8 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_SECRET still holds the placeholder value")
         if len(self.session_secret.get_secret_value()) < 32:
             raise ValueError("SESSION_SECRET must be at least 32 characters in production")
+        if not self.session_cookie_secure:
+            raise ValueError("SESSION_COOKIE_SECURE cannot be false in production")
         return self
 
     @property

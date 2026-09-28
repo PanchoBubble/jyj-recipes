@@ -32,6 +32,19 @@ Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/
 
 Settings load from env (and `.env`) via `jyj.config.Settings`. Backend tests use `TEST_DATABASE_URL` (default `postgresql+psycopg://jyj:jyj@127.0.0.1:55432/jyj_test`, the compose `db-test` service), run migrations once per session and roll back every test. Import new model modules in `backend/src/jyj/models/__init__.py` so autogenerate sees them.
 
+## Accounts
+
+There is no signup endpoint. Manage household accounts with the CLI (passwords are prompted, never passed as arguments; reset and disable revoke existing sessions):
+
+```sh
+cd backend && uv run jyj users create alice --display-name "Alice"
+uv run jyj users reset-password alice
+uv run jyj users disable alice
+uv run jyj users list
+```
+
+The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj` on every non-GET request under `/api/v1`.
+
 ## Config
 
 Copy `.env.example` to `.env` and replace the placeholders. `.env` is git-ignored; never commit real secrets.
