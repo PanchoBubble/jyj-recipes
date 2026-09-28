@@ -117,17 +117,19 @@ export function useChatHealth() {
   })
 }
 
-export function useConversations() {
+export function useConversations({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: chatKeys.lists(),
     queryFn: ({ signal }) => api.get<Conversation[]>('/chat/conversations', signal),
+    enabled,
   })
 }
 
-export function useConversation(id: number) {
+export function useConversation(id: number | null) {
   return useQuery({
-    queryKey: chatKeys.conversation(id),
+    queryKey: chatKeys.conversation(id ?? 0),
     queryFn: ({ signal }) => api.get<ConversationDetail>(`/chat/conversations/${id}`, signal),
+    enabled: id !== null,
   })
 }
 

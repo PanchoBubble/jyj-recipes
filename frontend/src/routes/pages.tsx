@@ -33,8 +33,6 @@ const LazyRecipeEditorPage = lazyPage(pageLoaders.recipeEditor, 'RecipeEditorPag
 const LazyShoppingPage = lazyPage(pageLoaders.shopping, 'ShoppingPage')
 const LazyShoppingListPage = lazyPage(pageLoaders.shoppingList, 'ShoppingListPage')
 const LazyStockPage = lazyPage(pageLoaders.stock, 'StockPage')
-const LazyChatPage = lazyPage(pageLoaders.chat, 'ChatPage')
-const LazyConversationPage = lazyPage(pageLoaders.conversation, 'ConversationPage')
 const LazySettingsPage = lazyPage(pageLoaders.settings, 'SettingsPage')
 
 export const CalendarPage = () => <Suspended page={LazyCalendarPage} />
@@ -44,8 +42,6 @@ export const RecipeEditorPage = () => <Suspended page={LazyRecipeEditorPage} />
 export const ShoppingPage = () => <Suspended page={LazyShoppingPage} />
 export const ShoppingListPage = () => <Suspended page={LazyShoppingListPage} />
 export const StockPage = () => <Suspended page={LazyStockPage} />
-export const ChatPage = () => <Suspended page={LazyChatPage} />
-export const ConversationPage = () => <Suspended page={LazyConversationPage} />
 export const SettingsPage = () => <Suspended page={LazySettingsPage} />
 
 export function RoutePrefetch({ children }: { children: ReactNode }) {

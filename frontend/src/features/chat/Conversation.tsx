@@ -1,6 +1,5 @@
-import { ChevronLeft, LoaderCircle, RotateCcw } from 'lucide-react'
+import { LoaderCircle, RotateCcw } from 'lucide-react'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { Link, Navigate, useParams } from 'react-router'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -14,24 +13,17 @@ import {
   type ChatMessage,
   type ConversationDetail,
 } from './api'
+import { useChat } from './ChatProvider'
 import { Composer } from './Composer'
 import { healthProblem } from './health'
 import { HealthBanner } from './HealthBanner'
-import { useChatStream, type LiveTurn } from './useChatStream'
+import type { LiveTurn } from './useChatStream'
 
-export function ConversationPage() {
-  const { id } = useParams()
-  const conversationId = Number(id)
-  if (!Number.isInteger(conversationId) || conversationId <= 0) {
-    return <Navigate to="/chat" replace />
-  }
-  return <Conversation key={conversationId} conversationId={conversationId} />
-}
-
-function Conversation({ conversationId }: { conversationId: number }) {
+/** Messages, action cards and composer for the conversation the chat panel shows. */
+export function Conversation() {
+  const { conversationId, live, send, stop } = useChat()
   const conversation = useConversation(conversationId)
   const health = useChatHealth()
-  const { live, send, stop } = useChatStream(conversationId)
   const problem = healthProblem(health.data)
   const end = useRef<HTMLDivElement>(null)
 
@@ -40,37 +32,33 @@ function Conversation({ conversationId }: { conversationId: number }) {
   }, [conversation.data, live])
 
   return (
-    <div className="flex flex-col gap-3 pb-24">
-      <Link
-        to="/chat"
-        className="inline-flex min-h-10 items-center gap-1 self-start text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" aria-hidden /> All chats
-      </Link>
-      {problem && <HealthBanner message={problem} />}
+    <>
+      <div data-vaul-no-drag className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
+        {problem && <HealthBanner message={problem} />}
 
-      {conversation.isPending ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-10 w-2/3 self-end" />
-          <Skeleton className="h-16 w-3/4" />
-        </div>
-      ) : conversation.isError ? (
-        <p className="text-sm text-destructive">Could not load this chat.</p>
-      ) : (
-        <ol aria-label="Messages" className="flex flex-col gap-3">
-          <History detail={conversation.data} />
-          {live && (
-            <LiveTurnView
-              turn={live}
-              conversationId={conversationId}
-              showUser={!storedLastUser(conversation.data, live)}
-              onRetry={() => void send(live.text, live.source)}
-              retryDisabled={Boolean(problem)}
-            />
-          )}
-        </ol>
-      )}
-      <div ref={end} />
+        {conversation.isPending ? (
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-10 w-2/3 self-end" />
+            <Skeleton className="h-16 w-3/4" />
+          </div>
+        ) : conversation.isError ? (
+          <p className="text-sm text-destructive">Could not load this chat.</p>
+        ) : (
+          <ol aria-label="Messages" className="flex flex-col gap-3">
+            <History detail={conversation.data} />
+            {live && (
+              <LiveTurnView
+                turn={live}
+                conversationId={conversation.data.id}
+                showUser={!storedLastUser(conversation.data, live)}
+                onRetry={() => void send(live.text, live.source)}
+                retryDisabled={Boolean(problem)}
+              />
+            )}
+          </ol>
+        )}
+        <div ref={end} />
+      </div>
 
       <Composer
         disabled={Boolean(problem) || conversation.isPending || conversation.isError}
@@ -79,7 +67,7 @@ function Conversation({ conversationId }: { conversationId: number }) {
         onStop={stop}
         voiceAvailable={health.data?.stt?.available === true}
       />
-    </div>
+    </>
   )
 }
 

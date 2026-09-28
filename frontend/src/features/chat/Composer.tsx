@@ -85,13 +85,14 @@ export function Composer({
 
   return (
     <form
-      className="fixed inset-x-0 bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      data-vaul-no-drag
+      className="shrink-0 border-t bg-background"
       onSubmit={(event) => {
         event.preventDefault()
         submit()
       }}
     >
-      <div className="mx-auto flex max-w-2xl flex-col gap-1.5 py-2 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]">
+      <div className="flex flex-col gap-1.5 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {message ? (
           <div role="alert" className="flex items-start gap-2 text-sm text-destructive">
             <p className="flex-1">{message}</p>

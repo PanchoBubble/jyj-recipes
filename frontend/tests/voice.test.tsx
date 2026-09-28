@@ -12,7 +12,7 @@ import {
 } from '@/features/chat/voice'
 
 import { renderApp } from './render'
-import { API, alice, meAs, problem, server } from './server'
+import { API, alice, calendarBackdrop, meAs, problem, server } from './server'
 
 const at = '2026-09-28T10:00:00Z'
 
@@ -133,7 +133,9 @@ function voiceHandlers({
   })
   server.use(
     meAs(alice),
+    ...calendarBackdrop(),
     http.get(`${API}/chat/health`, () => HttpResponse.json(health)),
+    http.get(`${API}/chat/conversations`, () => HttpResponse.json([])),
     http.get(`${API}/chat/conversations/7`, () => HttpResponse.json(conversation)),
     http.post(`${API}/chat/conversations/7/messages`, async ({ request }) => {
       sent.push(await request.json())

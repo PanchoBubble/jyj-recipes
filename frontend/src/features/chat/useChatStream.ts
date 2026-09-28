@@ -40,15 +40,23 @@ const LOST: TurnError = {
   message: 'The connection was lost before the assistant answered. Please try again.',
 }
 
-export function useChatStream(conversationId: number) {
+export function useChatStream(conversationId: number | null) {
   const queryClient = useQueryClient()
   const [live, setLive] = useState<LiveTurn | null>(null)
   const controller = useRef<AbortController | null>(null)
 
-  useEffect(() => () => controller.current?.abort(), [conversationId])
+  useEffect(
+    () => () => {
+      controller.current?.abort()
+      controller.current = null
+      setLive(null)
+    },
+    [conversationId],
+  )
 
   const send = useCallback(
     async (text: string, source: MessageInput = { input: 'text' }) => {
+      if (conversationId === null) return
       controller.current?.abort()
       const own = new AbortController()
       controller.current = own

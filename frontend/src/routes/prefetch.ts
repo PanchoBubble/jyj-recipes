@@ -8,8 +8,6 @@ export const pageLoaders = {
   shopping: () => import('@/features/shopping/ShoppingPage'),
   shoppingList: () => import('@/features/shopping/ShoppingListPage'),
   stock: () => import('@/features/stock/StockPage'),
-  chat: () => import('@/features/chat/ChatPage'),
-  conversation: () => import('@/features/chat/ConversationPage'),
   settings: () => import('@/routes/SettingsPage'),
 }
 
@@ -31,8 +29,6 @@ const loadersByPath: [RegExp, Loader][] = [
   [/^\/shopping\/?$/, pageLoaders.shopping],
   [/^\/shopping\/lists\/[^/]+\/?$/, pageLoaders.shoppingList],
   [/^\/stock\/?$/, pageLoaders.stock],
-  [/^\/chat\/?$/, pageLoaders.chat],
-  [/^\/chat\/[^/]+\/?$/, pageLoaders.conversation],
   [/^\/settings\/?$/, pageLoaders.settings],
 ]
 
@@ -45,7 +41,6 @@ const tabLoaders = [
   pageLoaders.recipes,
   pageLoaders.shopping,
   pageLoaders.stock,
-  pageLoaders.chat,
 ]
 
 function onIdle(callback: () => void) {

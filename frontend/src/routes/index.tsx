@@ -3,10 +3,9 @@ import { Navigate, type RouteObject } from 'react-router'
 import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
+import { ChatDeepLink } from '@/features/chat/ChatLauncher'
 import {
   CalendarPage,
-  ChatPage,
-  ConversationPage,
   RecipeDetailPage,
   RecipeEditorPage,
   RecipesPage,
@@ -74,14 +73,8 @@ export const routes: RouteObject[] = [
             element: <StockPage />,
             handle: { title: 'Stock' } satisfies RouteHandle,
           },
-          {
-            path: 'chat',
-            handle: { title: 'Chat' } satisfies RouteHandle,
-            children: [
-              { index: true, element: <ChatPage /> },
-              { path: ':id', element: <ConversationPage /> },
-            ],
-          },
+          { path: 'chat', element: <ChatDeepLink /> },
+          { path: 'chat/:id', element: <ChatDeepLink /> },
           {
             path: 'settings',
             element: <SettingsPage />,

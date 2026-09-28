@@ -18,3 +18,12 @@ export const meAs = (user: typeof alice | null) =>
   )
 
 export const server = setupServer(meAs(null))
+
+/** What the calendar asks for, so a chat deep link (which lands on /calendar) renders quietly. */
+export const calendarBackdrop = () => [
+  http.get(`${API}/meal-slots`, () => HttpResponse.json([])),
+  http.get(`${API}/planned-meals`, () => HttpResponse.json([])),
+  http.get(`${API}/recipes`, () =>
+    HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 }),
+  ),
+]

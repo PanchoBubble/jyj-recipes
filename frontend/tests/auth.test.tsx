@@ -71,8 +71,9 @@ describe('route guard', () => {
 
   it('redirects to login when any request returns 401 mid-session', async () => {
     server.use(meAs(alice))
-    const { router, queryClient } = renderApp('/chat')
-    await screen.findByRole('heading', { level: 1, name: 'Chat' })
+    server.use(http.get(`${API}/meal-slots`, () => HttpResponse.json([])))
+    const { router, queryClient } = renderApp('/settings')
+    await screen.findByRole('heading', { level: 1, name: 'Settings' })
 
     server.use(
       meAs(null),
@@ -87,7 +88,7 @@ describe('route guard', () => {
 
     await screen.findByLabelText('Username')
     expect(router.state.location.pathname).toBe('/login')
-    expect(router.state.location.search).toBe('?next=%2Fchat')
+    expect(router.state.location.search).toBe('?next=%2Fsettings')
   })
 
   it('sends a signed-in user away from /login', async () => {

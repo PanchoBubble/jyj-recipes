@@ -21,7 +21,6 @@ describe('app layout', () => {
       'Recipes',
       'Shopping',
       'Stock',
-      'Chat',
     ])
     expect(within(nav).getByRole('link', { name: 'Calendar' })).toHaveAttribute(
       'aria-current',
@@ -34,7 +33,7 @@ describe('app layout', () => {
     const user = userEvent.setup()
     const nav = await screen.findByRole('navigation', { name: 'Main' })
 
-    for (const name of ['Recipes', 'Shopping', 'Stock', 'Chat']) {
+    for (const name of ['Recipes', 'Shopping', 'Stock']) {
       await user.click(within(nav).getByRole('link', { name }))
       expect(await screen.findByRole('heading', { level: 1, name })).toBeInTheDocument()
       expect(router.state.location.pathname).toBe(`/${name.toLowerCase()}`)
