@@ -54,6 +54,17 @@ Default is 7 + 4, so at most 11 backups, spanning about a month.
 
 Manual backups: `make backup-now` makes an ordinary backup (it supersedes that day's older one). `make backup-now label=pre-upgrade` writes `...Z-pre-upgrade` and is **never pruned**; delete those yourself.
 
+## Chat retention
+
+Chat text is kept 90 days. The `chat-purge` service (always on, not behind a profile) runs `jyj chat purge` when the stack starts and then every 24 hours: it deletes messages older than 90 days and conversations idle that long, closes proposals nobody can reach any more, and keeps the `chat_actions` audit rows. Each run logs one line:
+
+```sh
+docker compose logs chat-purge
+docker compose exec backend jyj chat purge --days 30   # one-off run, shorter window
+```
+
+A failed run is logged and retried on the next cycle. Backups taken before a purge still hold the older text until they are pruned (about a month with the defaults above).
+
 ## Copy off the Pi
 
 The external disk protects against SD-card death, not against theft, fire or the disk failing. Copy offsite now and then, from another machine:

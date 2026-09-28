@@ -103,6 +103,36 @@ services:
         condition: service_healthy
     mem_limit: 64m
 
+  # Chat retention: `jyj chat purge` once at start and then every 24 h (docs/BACKUP.md). Uses
+  # the backend image because the backup image has no Python; no volumes, no Codex login.
+  chat-purge:
+    build: *backend-build
+    image: jyj-backend
+    command:
+      - sh
+      - -c
+      - >-
+        trap 'exit 0' TERM INT;
+        while :; do
+        jyj chat purge || echo "chat purge failed, retrying in 24 h" >&2;
+        sleep 86400 & wait $$!;
+        done
+    restart: unless-stopped
+    init: true
+    env_file: *backend-env-file
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    # The image's healthcheck probes the API, which this container does not serve.
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 128m
+
   # Nightly pg_dump + photo snapshots into BACKUP_DIR (docs/BACKUP.md). Enable with
   # COMPOSE_PROFILES=backup in .env. Never mount codex-home or caddy-data here.
   backup:
