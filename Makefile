@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
-.PHONY: env-check up down build logs test-db-up test-db-down
+.PHONY: env-check up down build logs test-db-up test-db-down ca-export
 
 BACKEND := backend
 FRONTEND := frontend
@@ -17,6 +17,7 @@ help:
 	@echo "make up        start the stack in the background (needs .env)"
 	@echo "make down      stop the stack (volumes are kept)"
 	@echo "make logs      follow stack logs"
+	@echo "make ca-export copy Caddy's LAN root CA to ./caddy-root.crt (stack must be up)"
 	@echo "make test-db-up / test-db-down  throwaway Postgres on 127.0.0.1:55432"
 
 install:
@@ -80,3 +81,7 @@ test-db-up:
 
 test-db-down:
 	$(COMPOSE) --profile test rm -sf db-test
+
+ca-export:
+	$(COMPOSE) cp web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+	@openssl x509 -in caddy-root.crt -noout -subject -enddate -fingerprint -sha256 2>/dev/null || true

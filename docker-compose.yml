@@ -49,13 +49,26 @@ services:
         deploy: ./deploy
     image: jyj-web
     restart: unless-stopped
+    environment:
+      JYJ_HOSTNAME: ${JYJ_HOSTNAME:-recipes.home.arpa}
+      JYJ_LAN_IP: ${JYJ_LAN_IP:-}
+      JYJ_TLS: ${JYJ_TLS:-internal}
+      JYJ_DNS_PROVIDER: ${JYJ_DNS_PROVIDER:-}
+      JYJ_DNS_API_TOKEN: ${JYJ_DNS_API_TOKEN:-}
     ports:
       - "${WEB_BIND:-0.0.0.0}:80:80"
       - "${WEB_BIND:-0.0.0.0}:443:443"
     volumes:
       - photos:/srv/media:ro
+      # /data holds Caddy's internal root CA; losing it means reinstalling the CA on every device.
       - caddy-data:/data
       - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "--no-check-certificate", "https://localhost/"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
     depends_on:
       backend:
         condition: service_healthy

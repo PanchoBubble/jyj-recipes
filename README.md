@@ -25,8 +25,13 @@ Design, stack and milestones: [docs/PLAN.md](docs/PLAN.md). Issues are tracked w
 | `make test` | pytest and vitest (DB tests skip if the test database is unreachable) |
 | `make migrate` | `alembic upgrade head` against `DATABASE_URL` |
 | `make migration name="..."` | autogenerate an Alembic revision from the models |
+| `make ca-export` | copy Caddy's LAN root CA to `./caddy-root.crt` (stack must be up) |
 
-Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/readyz` also pings the database and returns 503 `{"status":"unavailable"}` with no details when it is down; it is for internal checks and is not proxied under `/api`.
+Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/readyz` also pings the database and returns 503 `{"status":"unavailable"}` with no details when it is down; it is for internal checks and is not proxied under `/api`. Through Caddy the same health check is `https://<JYJ_HOSTNAME>/api/healthz`.
+
+## HTTPS on the LAN
+
+Caddy serves the app on `https://$JYJ_HOSTNAME` (default `recipes.home.arpa`) with its own internal CA; HTTP redirects to HTTPS. Voice input needs this secure context. Device DNS and CA install steps, plus the DNS-01 and Tailscale alternatives, are in [docs/TLS.md](docs/TLS.md).
 
 ## Database
 

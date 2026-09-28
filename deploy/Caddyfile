@@ -1,17 +1,45 @@
-{
-	# Plain HTTP for now; TLS is added per site block below.
-	auto_https off
+# Site addresses and TLS mode come from the environment (see .env.example and docs/TLS.md).
+#   JYJ_HOSTNAME  LAN hostname devices use, default recipes.home.arpa
+#   JYJ_LAN_IP    optional: also serve https://<ip> (internal cert with an IP SAN)
+#   JYJ_TLS       internal (default, option A) | tailscale (option C) | dns (option B, needs a DNS plugin build)
+
+(tls-internal) {
+	tls internal
+}
+
+(tls-tailscale) {
+	tls {
+		get_certificate tailscale
+	}
+}
+
+(tls-dns) {
+	tls {
+		dns {$JYJ_DNS_PROVIDER} {env.JYJ_DNS_API_TOKEN}
+	}
+}
+
+(security-headers) {
+	header {
+		# 'unsafe-inline' styles: Radix (shadcn) injects <style> tags for scroll locking.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Permissions-Policy "microphone=(self), camera=(self)"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
 }
 
 (app) {
 	encode zstd gzip
+	import security-headers
 
 	# Internal probes are for compose/ops only, never exposed through the proxy.
 	handle /api/readyz {
 		respond 404
 	}
 
-	handle_path /api/* {
+	handle /api/* {
 		reverse_proxy backend:8000
 	}
 
@@ -27,6 +55,8 @@
 	}
 }
 
-:80 {
+# localhost and 127.0.0.1 keep the container healthcheck and on-Pi curl working.
+{$JYJ_HOSTNAME:recipes.home.arpa} {$JYJ_LAN_IP} localhost 127.0.0.1 {
+	import tls-{$JYJ_TLS:internal}
 	import app
 }

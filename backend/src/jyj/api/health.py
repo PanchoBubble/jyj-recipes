@@ -14,6 +14,7 @@ router = APIRouter()
 
 
 @router.get("/healthz")
+@router.get("/api/healthz", include_in_schema=False)
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
