@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import threading
+import uuid
 from collections.abc import AsyncIterator, Callable
 from functools import lru_cache
 from typing import Annotated, Any
@@ -16,6 +17,7 @@ from jyj.chat.orchestrator import (
     ChatEvent,
     Emit,
     decide,
+    decide_batch,
     error_event,
     run_turn,
     sanitized_error,
@@ -27,7 +29,14 @@ from jyj.chat.voice import Stt, stt_health
 from jyj.config import get_settings
 from jyj.db import get_db, get_sessionmaker
 from jyj.models import ChatAction, ChatConversation, User
-from jyj.schemas.chat import ActionOut, ConversationDetail, ConversationOut, MessageIn
+from jyj.schemas.chat import (
+    ActionOut,
+    BatchActionOut,
+    BatchOut,
+    ConversationDetail,
+    ConversationOut,
+    MessageIn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +121,9 @@ def post_message(
 ) -> StreamingResponse:
     """Run one turn and stream it as Server-Sent Events.
 
-    Events: ``status`` (thinking / running_tool), ``action`` (one per write call),
-    ``assistant`` (the reply), ``error`` (sanitized) and a final ``done``.
+    Events: ``status`` (thinking / running_tool), ``action`` (one per write call, or a
+    single ``tool: "batch"`` card listing them when the turn's writes were proposed as a
+    batch), ``assistant`` (the reply), ``error`` (sanitized) and a final ``done``.
     """
     conversations.get_conversation(db, user, conversation_id)
     user_id = user.id
@@ -176,12 +186,45 @@ def _decide(
     return action_out(conversations.get_owned_action(db, user, action_id))
 
 
+@router.post("/batches/{batch_id}/confirm", response_model=BatchOut)
+def confirm_batch(
+    batch_id: uuid.UUID, user: CurrentUser, db: Db, registry: ChatRegistry
+) -> BatchOut:
+    return _decide_batch(db, user, batch_id, registry, confirm=True)
+
+
+@router.post("/batches/{batch_id}/reject", response_model=BatchOut)
+def reject_batch(
+    batch_id: uuid.UUID, user: CurrentUser, db: Db, registry: ChatRegistry
+) -> BatchOut:
+    return _decide_batch(db, user, batch_id, registry, confirm=False)
+
+
+def _decide_batch(
+    db: Session, user: User, batch_id: uuid.UUID, registry: Registry, *, confirm: bool
+) -> BatchOut:
+    result = decide_batch(db, user, batch_id, registry, confirm=confirm)
+    if not result.outcomes:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Batch has no pending actions")
+    rows = {a.id: a for a in conversations.get_owned_batch(db, user, batch_id)}
+    return BatchOut(
+        id=batch_id,
+        decision=result.decision,
+        completed=result.completed,
+        actions=[
+            BatchActionOut(**action_out(rows[o.action_id]).model_dump(), outcome=o.outcome)
+            for o in result.outcomes
+        ],
+    )
+
+
 def action_out(action: ChatAction) -> ActionOut:
     result = action.result or {}
     data = result.get("data") if isinstance(result, dict) else None
     return ActionOut(
         id=action.id,
         message_id=action.message_id,
+        batch_id=action.batch_id,
         tool=action.tool,
         status=action.status.value,
         summary=summarize(action.tool, action.arguments, data),

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from jyj import cli
 from jyj.api.auth import SESSION_COOKIE
-from jyj.chat.orchestrator import ChatEvent
+from jyj.chat.orchestrator import MAX_ACTIONS, ChatEvent
 from jyj.chat.provider import ProviderNotAuthenticated
 from jyj.chat.router import (
     format_sse,
@@ -381,6 +382,81 @@ def test_only_the_owner_can_confirm_or_reject(
     assert client.post(f"{API}/actions/999999/confirm").status_code == 404
     db.expire_all()
     assert db.get(Recipe, soup.id) is not None
+
+
+def propose_batch(client: TestClient, provider: FakeProvider, flour: Ingredient) -> dict:
+    conversation_id = new_conversation(client)
+    adds = [call("adjust_stock", ingredient_id=flour.id, delta=1, unit="g")] * (MAX_ACTIONS + 1)
+    provider.steps.append(turn("Confirm all?", actions=adds))
+    frames = parse_sse(send(client, conversation_id, "add a gram six times").text)
+    [card] = [data for kind, data in frames if kind == "action"]
+    assert (card["tool"], card["status"], card["action_id"]) == ("batch", "proposed", None)
+    card["conversation_id"] = conversation_id
+    return card
+
+
+def test_batch_confirm_endpoint_reports_every_action(
+    client: TestClient, provider: FakeProvider, db: Session, flour: Ingredient
+) -> None:
+    card = propose_batch(client, provider, flour)
+    member_ids = [c["action_id"] for c in card["actions"]]
+
+    detail = client.get(f"{API}/conversations/{card['conversation_id']}").json()
+    assert [a["id"] for a in detail["actions"]] == member_ids
+    assert {a["batch_id"] for a in detail["actions"]} == {card["batch_id"]}
+
+    confirmed = client.post(f"{API}/batches/{card['batch_id']}/confirm")
+    again = client.post(f"{API}/batches/{card['batch_id']}/confirm")
+
+    assert confirmed.status_code == 200, confirmed.text
+    body = confirmed.json()
+    assert (body["id"], body["decision"], body["completed"]) == (
+        card["batch_id"],
+        "confirmed",
+        True,
+    )
+    assert [a["id"] for a in body["actions"]] == member_ids
+    assert {(a["outcome"], a["status"], a["batch_id"]) for a in body["actions"]} == {
+        ("executed", "executed", card["batch_id"])
+    }
+    assert again.status_code == 409
+    db.expire_all()
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS + 1)
+
+
+def test_batch_reject_endpoint(
+    client: TestClient, provider: FakeProvider, db: Session, flour: Ingredient
+) -> None:
+    card = propose_batch(client, provider, flour)
+
+    rejected = client.post(f"{API}/batches/{card['batch_id']}/reject")
+
+    assert rejected.status_code == 200
+    assert {a["outcome"] for a in rejected.json()["actions"]} == {"rejected"}
+    assert client.post(f"{API}/batches/{card['batch_id']}/confirm").status_code == 409
+    single = card["actions"][0]["action_id"]
+    assert client.post(f"{API}/actions/{single}/confirm").status_code == 409
+    db.expire_all()
+    assert db.get(StockItem, flour.id) is None
+
+
+def test_only_the_owner_can_decide_a_batch(
+    client: TestClient, intruder: TestClient, provider: FakeProvider, db: Session, flour
+) -> None:
+    card = propose_batch(client, provider, flour)
+
+    assert intruder.post(f"{API}/batches/{card['batch_id']}/confirm").status_code == 404
+    assert intruder.post(f"{API}/batches/{card['batch_id']}/reject").status_code == 404
+    assert client.post(f"{API}/batches/{uuid.uuid4()}/confirm").status_code == 404
+    assert client.post(f"{API}/batches/not-a-uuid/confirm").status_code == 422
+    assert (
+        client.post(
+            f"{API}/batches/{card['batch_id']}/confirm", headers={"X-Requested-With": ""}
+        ).status_code
+        == 403
+    )
+    db.expire_all()
+    assert db.get(StockItem, flour.id) is None
 
 
 def test_confirm_needs_the_csrf_header(client, provider, soup) -> None:

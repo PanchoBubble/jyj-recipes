@@ -1,5 +1,6 @@
+import uuid
 from datetime import datetime
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -46,6 +47,7 @@ class MessageOut(BaseModel):
 class ActionOut(BaseModel):
     id: int
     message_id: int | None
+    batch_id: uuid.UUID | None = None
     tool: str
     status: str
     summary: str
@@ -54,6 +56,19 @@ class ActionOut(BaseModel):
     error: Any | None = None
     created_at: datetime
     executed_at: datetime | None
+
+
+class BatchActionOut(ActionOut):
+    # executed / failed / timeout / rejected for actions decided now; skipped for the ones
+    # left proposed after an earlier action in the batch did not succeed.
+    outcome: str
+
+
+class BatchOut(BaseModel):
+    id: uuid.UUID
+    decision: Literal["confirmed", "rejected"]
+    completed: bool
+    actions: list[BatchActionOut]
 
 
 class ConversationDetail(ConversationOut):

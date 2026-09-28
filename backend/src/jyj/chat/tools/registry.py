@@ -14,6 +14,7 @@ messages never reach the prompt.
 
 import json
 import logging
+import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -197,23 +198,34 @@ class Registry:
                 lines.append(f"- {tool.name}({args}){flag}: {tool.description}")
         return "\n".join(lines)
 
-    def execute(self, name: str, raw_args: Any, ctx: ToolContext) -> ToolResult:
+    def execute(
+        self,
+        name: str,
+        raw_args: Any,
+        ctx: ToolContext,
+        *,
+        propose: bool = False,
+        batch_id: uuid.UUID | None = None,
+    ) -> ToolResult:
+        """Run a call, or only record it as a proposal when the tool requires confirmation
+        or ``propose`` is set (write tools only). ``batch_id`` groups proposals that are
+        confirmed together."""
         tool = self._tools.get(name) if isinstance(name, str) else None
         stored_args = _jsonable(raw_args)
         if tool is None:
             result = _rejected(str(name), "unknown_tool", f"unknown tool {str(name)[:64]!r}")
-            return self._audit(ctx, str(name), stored_args, result)
+            return self._audit(ctx, str(name), stored_args, result, batch_id=batch_id)
 
         args, error = _validate(tool, raw_args)
         if error is not None:
-            return self._audit(ctx, name, stored_args, error)
+            return self._audit(ctx, name, stored_args, error, batch_id=batch_id)
 
-        if tool.requires_confirmation:
+        if tool.requires_confirmation or (propose and tool.kind == "write"):
             result = self._run(tool, ctx, args, tool.preview, ToolStatus.NEEDS_CONFIRMATION)
-            return self._audit(ctx, name, stored_args, result)
+            return self._audit(ctx, name, stored_args, result, batch_id=batch_id)
 
         result = self._run(tool, ctx, args, tool.handler, ToolStatus.SUCCESS)
-        return self._audit(ctx, name, stored_args, result, executed=True)
+        return self._audit(ctx, name, stored_args, result, executed=True, batch_id=batch_id)
 
     def confirm(self, ctx: ToolContext, action_id: int) -> ToolResult:
         """Run a proposed action as ``ctx.user``, who must have requested it or own its
@@ -342,9 +354,11 @@ class Registry:
         result: ToolResult,
         *,
         executed: bool = False,
+        batch_id: uuid.UUID | None = None,
     ) -> ToolResult:
         action = ChatAction(
             conversation_id=ctx.conversation_id,
+            batch_id=batch_id,
             tool=name[:TOOL_NAME_MAX],
             arguments=arguments,
             status=_AUDIT_STATUS[result.status],

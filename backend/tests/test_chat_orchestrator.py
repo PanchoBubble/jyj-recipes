@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -12,9 +13,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from jyj.chat import conversations
 from jyj.chat.orchestrator import (
     MAX_ACTIONS,
+    MAX_BATCH_ACTIONS,
     MAX_ROUNDS,
     ChatEvent,
     decide,
+    decide_batch,
     escape_json,
     parse_output,
     run_turn,
@@ -315,14 +318,154 @@ def test_unknown_tools_and_extra_keys_never_run(ask, db: Session, events: Events
     assert db.scalar(select(User.id).limit(1)) is not None
 
 
-def test_too_many_actions_are_capped(ask, db: Session, flour: Ingredient) -> None:
-    adds = [call("adjust_stock", ingredient_id=flour.id, delta=1, unit="g")] * (MAX_ACTIONS + 2)
+def test_up_to_max_actions_run_directly(ask, db: Session, flour: Ingredient) -> None:
+    adds = [call("adjust_stock", ingredient_id=flour.id, delta=1, unit="g")] * MAX_ACTIONS
 
     result = ask(FakeProvider(turn("ok", actions=adds)))
 
     assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS)
-    assert [c["status"] for c in result.actions].count("rejected") == 2
-    assert result.actions[-1]["error"]["code"] == "too_many_actions"
+    assert [c["status"] for c in result.actions] == ["executed"] * MAX_ACTIONS
+    assert {a.batch_id for a in actions(db)} == {None}
+
+
+def bulk(flour: Ingredient, count: int = MAX_ACTIONS + 2) -> list[dict]:
+    return [call("adjust_stock", ingredient_id=flour.id, delta=1, unit="g")] * count
+
+
+def test_bulk_turns_are_proposed_as_one_batch(
+    ask, db: Session, flour: Ingredient, events: Events
+) -> None:
+    result = ask(FakeProvider(turn("Confirm these?", actions=bulk(flour))))
+
+    assert db.get(StockItem, flour.id) is None
+    rows = actions(db)
+    assert [a.status for a in rows] == [ChatActionStatus.PROPOSED] * (MAX_ACTIONS + 2)
+    assert len({a.batch_id for a in rows}) == 1 and rows[0].batch_id is not None
+    assert all(a.message_id == result.assistant_message_id for a in rows)
+    [card] = events.of("action")
+    assert result.actions == [card]
+    assert card["action_id"] is None
+    assert (card["tool"], card["status"], card["batch_id"]) == (
+        "batch",
+        "proposed",
+        str(rows[0].batch_id),
+    )
+    assert card["summary"] == f"{MAX_ACTIONS + 2} of {MAX_ACTIONS + 2} actions to confirm together"
+    assert [c["action_id"] for c in card["actions"]] == [a.id for a in rows]
+    assert {c["status"] for c in card["actions"]} == {"proposed"}
+
+
+def test_batches_are_capped(ask, db: Session, flour: Ingredient) -> None:
+    result = ask(FakeProvider(turn("ok", actions=bulk(flour, MAX_BATCH_ACTIONS + 2))))
+
+    [card] = result.actions
+    assert [c["status"] for c in card["actions"]].count("proposed") == MAX_BATCH_ACTIONS
+    assert card["actions"][-1]["error"]["code"] == "too_many_actions"
+    assert len(actions(db)) == MAX_BATCH_ACTIONS
+
+
+def test_invalid_calls_in_a_batch_are_rejected_but_kept_in_it(
+    ask, db: Session, user: User, registry: Registry, flour: Ingredient
+) -> None:
+    calls = [*bulk(flour, MAX_ACTIONS), call("adjust_stock", ingredient_id=flour.id), call("nope")]
+
+    [card] = ask(FakeProvider(turn("ok", actions=calls))).actions
+
+    assert [c["status"] for c in card["actions"]][-2:] == ["rejected", "rejected"]
+    assert len({a.batch_id for a in actions(db)}) == 1
+    decision = decide_batch(db, user, actions(db)[0].batch_id, registry, confirm=True)
+    assert [o.outcome for o in decision.outcomes] == ["executed"] * MAX_ACTIONS
+    assert decision.completed and decision.ok
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS)
+
+
+def test_confirm_batch_runs_every_action_in_order(
+    ask, db: Session, user: User, conversation, registry: Registry, flour: Ingredient
+) -> None:
+    ask(FakeProvider(turn("ok", actions=bulk(flour))))
+    batch_id = actions(db)[0].batch_id
+
+    decision = decide_batch(db, user, batch_id, registry, confirm=True)
+
+    assert decision.decision == "confirmed" and decision.completed and decision.ok
+    assert [o.action_id for o in decision.outcomes] == [a.id for a in actions(db)]
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS + 2)
+    assert {a.status for a in actions(db)} == {ChatActionStatus.EXECUTED}
+    assert {a.confirmed_by for a in actions(db)} == {user.id}
+    last = conversations.messages(db, conversation.id)[-1]
+    assert last.role is ChatRole.TOOL
+    [entry] = json.loads(last.content)
+    assert (entry["batch_id"], entry["decision"]) == (str(batch_id), "confirmed")
+    assert [r["outcome"] for r in entry["results"]] == ["executed"] * (MAX_ACTIONS + 2)
+
+    assert decide_batch(db, user, batch_id, registry, confirm=True).outcomes == []
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS + 2)
+
+
+def test_confirm_batch_stops_at_the_first_failure(
+    ask, db: Session, user: User, registry: Registry, flour: Ingredient
+) -> None:
+    soup = recipes_service.create_recipe(db, user, StockSource.UI, name="Soup")
+    calls = [*bulk(flour, 2), call("delete_recipe", recipe_id=soup.id), *bulk(flour, 3)]
+    ask(FakeProvider(turn("ok", actions=calls)))
+    batch_id = actions(db)[0].batch_id
+    recipes_service.delete_recipe(db, user, StockSource.UI, soup.id)
+
+    first = decide_batch(db, user, batch_id, registry, confirm=True)
+
+    assert [o.outcome for o in first.outcomes] == ["executed"] * 2 + ["rejected"] + ["skipped"] * 3
+    assert first.outcomes[2].result.error["code"] == "not_found"
+    assert first.outcomes[3].result is None
+    assert not first.completed and not first.ok
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(2)
+    assert [a.status for a in actions(db)][-3:] == [ChatActionStatus.PROPOSED] * 3
+
+    second = decide_batch(db, user, batch_id, registry, confirm=True)
+
+    assert [o.outcome for o in second.outcomes] == ["executed"] * 3
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(5)
+
+
+def test_reject_batch_declines_every_pending_action(
+    ask, db: Session, user: User, registry: Registry, flour: Ingredient
+) -> None:
+    ask(FakeProvider(turn("ok", actions=bulk(flour))))
+    batch_id = actions(db)[0].batch_id
+
+    decision = decide_batch(db, user, batch_id, registry, confirm=False)
+
+    assert decision.ok and decision.completed
+    assert {o.outcome for o in decision.outcomes} == {"rejected"}
+    assert {a.status for a in actions(db)} == {ChatActionStatus.REJECTED}
+    assert db.get(StockItem, flour.id) is None
+    assert decide_batch(db, user, batch_id, registry, confirm=True).outcomes == []
+
+
+def test_batch_members_can_still_be_decided_one_by_one(
+    ask, db: Session, user: User, registry: Registry, flour: Ingredient
+) -> None:
+    ask(FakeProvider(turn("ok", actions=bulk(flour))))
+    first, *rest = actions(db)
+
+    assert decide(db, user, first.id, registry, confirm=True).ok
+    decision = decide_batch(db, user, first.batch_id, registry, confirm=True)
+
+    assert [o.action_id for o in decision.outcomes] == [a.id for a in rest]
+    assert db.get(StockItem, flour.id).quantity_base == Decimal(MAX_ACTIONS + 2)
+
+
+def test_only_the_conversation_owner_can_decide_a_batch(
+    ask, db: Session, user: User, other_user: User, registry: Registry, flour: Ingredient
+) -> None:
+    ask(FakeProvider(turn("ok", actions=bulk(flour))))
+    batch_id = actions(db)[0].batch_id
+
+    for confirm in (True, False):
+        with pytest.raises(NotFoundError):
+            decide_batch(db, other_user, batch_id, registry, confirm=confirm)
+    with pytest.raises(NotFoundError):
+        decide_batch(db, user, uuid.uuid4(), registry, confirm=True)
+    assert {a.status for a in actions(db)} == {ChatActionStatus.PROPOSED}
 
 
 def test_malformed_model_output_is_a_sanitized_error(ask, db, conversation, events) -> None:

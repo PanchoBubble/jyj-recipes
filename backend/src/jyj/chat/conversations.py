@@ -1,5 +1,6 @@
 """Conversation storage: ownership-checked lookups, history and the retention purge."""
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -88,6 +89,27 @@ def get_owned_action(db: Session, user: User, action_id: int) -> ChatAction:
     if action is None:
         raise NotFoundError("Action not found")
     return action
+
+
+def get_owned_batch(
+    db: Session, user: User, batch_id: uuid.UUID, *, lock: bool = False
+) -> list[ChatAction]:
+    """A batch's actions in proposal order, from one of the caller's conversations, else 404.
+
+    ``lock`` takes the rows FOR UPDATE so two decisions on one batch run one after the other.
+    """
+    stmt = (
+        select(ChatAction)
+        .join(ChatConversation, ChatConversation.id == ChatAction.conversation_id)
+        .where(ChatAction.batch_id == batch_id, ChatConversation.user_id == user.id)
+        .order_by(ChatAction.id)
+    )
+    if lock:
+        stmt = stmt.with_for_update(of=ChatAction).execution_options(populate_existing=True)
+    batch = list(db.scalars(stmt))
+    if not batch:
+        raise NotFoundError("Batch not found")
+    return batch
 
 
 def touch(db: Session, conversation: ChatConversation, first_text: str | None = None) -> None:

@@ -1,8 +1,20 @@
+import uuid
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -110,6 +122,8 @@ class ChatAction(Base):
     message_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_messages.id", ondelete="SET NULL"), index=True
     )
+    # Set on every call of a turn whose writes were all proposed to be confirmed together.
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     tool: Mapped[str] = mapped_column(String(64))
     arguments: Mapped[Any] = mapped_column(JSONB)
     status: Mapped[ChatActionStatus] = mapped_column(chat_action_status_enum)

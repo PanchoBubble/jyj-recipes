@@ -4,7 +4,9 @@ The model never acts by itself. Each round it returns an object shaped by
 ``registry.output_schema()``. Read tools listed in ``needs`` run and their results go back
 as quoted data for another round (at most ``MAX_ROUNDS`` in total); write tools in the final
 round's ``actions`` go through ``registry.execute``, which validates, audits and turns
-confirmation-only tools into proposals. Anything else the model writes is ignored.
+confirmation-only tools into proposals. A turn with more than ``MAX_ACTIONS`` writes runs
+none of them: all are stored as proposals under one batch id for the user to confirm at
+once. Anything else the model writes is ignored.
 
 Everything that is not the current request (slot, recipe and ingredient names, stock,
 earlier messages, tool results) is embedded as escaped JSON inside ``<data>`` blocks that the
@@ -15,6 +17,7 @@ block or open a new one.
 import json
 import logging
 import threading
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -51,6 +54,7 @@ logger = logging.getLogger(__name__)
 MAX_ROUNDS = 3
 MAX_NEEDS_PER_ROUND = 5
 MAX_ACTIONS = 5
+MAX_BATCH_ACTIONS = 25
 TEXT_MAX = 2000
 REPLY_MAX = 4000
 HISTORY_MESSAGES = 12
@@ -79,7 +83,9 @@ leave "actions" empty.
 results arrive in the next round. There are at most {MAX_ROUNDS} rounds per request and \
 "needs" are ignored on the last one.
 5. Tools marked [asks the user to confirm first] are only proposed; tell the user they need \
-to confirm. Use at most {MAX_ACTIONS} actions per request.
+to confirm. With more than {MAX_ACTIONS} actions in one request none of them run: they are all \
+proposed together and the user confirms them at once, so say so. Never use more than \
+{MAX_BATCH_ACTIONS} actions per request.
 6. Always answer in the language the user writes in. Keep "reply" short: what you did, will \
 do, or need to know.
 7. Respond only with the JSON object the output schema describes."""
@@ -228,13 +234,14 @@ def run_turn(
                 action_ids.extend([result.action_id] if result.action_id else [])
                 gathered.append(_quoted(rounds, call, result))
 
+        batch_id = uuid.uuid4() if len(turn.actions) > MAX_ACTIONS else None
         executed: list[tuple[Call, ToolResult]] = []
         for index, call in enumerate(turn.actions):
-            if index >= MAX_ACTIONS:
+            if index >= MAX_BATCH_ACTIONS:
                 result = _local_rejection(call, "too_many_actions", "too many actions in one turn")
             else:
                 emit(ChatEvent("status", {"state": "running_tool", "tool": _label(call.tool)}))
-                result = _execute(registry, ctx, call, "write")
+                result = _execute(registry, ctx, call, "write", batch_id=batch_id)
             action_ids.extend([result.action_id] if result.action_id else [])
             executed.append((call, result))
 
@@ -266,6 +273,8 @@ def run_turn(
         return TurnResult(user_message_id, error=code)
 
     cards = [action_card(call.tool, call.args, result) for call, result in executed]
+    if batch_id is not None:
+        cards = [batch_card(batch_id, cards)]
     for card in cards:
         emit(ChatEvent("action", card))
     emit(ChatEvent("assistant", {"message_id": assistant.id, "reply": turn.reply}))
@@ -300,12 +309,21 @@ def _calls(value: Any) -> list[Call]:
     return calls
 
 
-def _execute(registry: Registry, ctx: ToolContext, call: Call, kind: str) -> ToolResult:
+def _execute(
+    registry: Registry,
+    ctx: ToolContext,
+    call: Call,
+    kind: str,
+    *,
+    batch_id: uuid.UUID | None = None,
+) -> ToolResult:
     tool = registry.get(call.tool)
     if tool is not None and tool.kind != kind:
         where = "needs" if kind == "read" else "actions"
         return _local_rejection(call, "wrong_list", f"{call.tool} does not belong in {where}")
-    return registry.execute(call.tool, call.args, ctx)
+    return registry.execute(
+        call.tool, call.args, ctx, propose=batch_id is not None, batch_id=batch_id
+    )
 
 
 def _local_rejection(call: Call, code: str, message: str) -> ToolResult:
@@ -342,6 +360,19 @@ def action_card(tool: str, args: Any, result: ToolResult) -> dict[str, Any]:
     if result.error is not None:
         card["error"] = result.error
     return card
+
+
+def batch_card(batch_id: uuid.UUID, cards: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """One card for a whole batch; it has no action id of its own, only its members do."""
+    pending = sum(1 for card in cards if card["status"] == ChatActionStatus.PROPOSED.value)
+    return {
+        "action_id": None,
+        "batch_id": str(batch_id),
+        "tool": "batch",
+        "status": (ChatActionStatus.PROPOSED if pending else ChatActionStatus.REJECTED).value,
+        "summary": f"{pending} of {len(cards)} actions to confirm together",
+        "actions": list(cards),
+    }
 
 
 def summarize(tool: str, args: Any, data: Mapping[str, Any] | None) -> str:
@@ -486,6 +517,29 @@ def _clip(text: str, limit: int) -> str:
 # --- confirmation ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class BatchOutcome:
+    action_id: int
+    outcome: str
+    result: ToolResult | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BatchDecision:
+    batch_id: uuid.UUID
+    decision: Literal["confirmed", "rejected"]
+    outcomes: list[BatchOutcome]
+
+    @property
+    def completed(self) -> bool:
+        return bool(self.outcomes) and all(o.outcome != "skipped" for o in self.outcomes)
+
+    @property
+    def ok(self) -> bool:
+        wanted = "executed" if self.decision == "confirmed" else "rejected"
+        return bool(self.outcomes) and all(o.outcome == wanted for o in self.outcomes)
+
+
 def decide(
     db: Session, user: User, action_id: int, registry: Registry, *, confirm: bool
 ) -> ToolResult:
@@ -512,3 +566,54 @@ def decide(
             conversations.touch(db, conversation)
         db.flush()
     return result
+
+
+def decide_batch(
+    db: Session, user: User, batch_id: uuid.UUID, registry: Registry, *, confirm: bool
+) -> BatchDecision:
+    """Confirm or reject every pending action of one of ``user``'s batches, in order.
+
+    Confirming stops at the first action that does not succeed; the ones after it stay
+    proposed (reported as ``skipped``) so the batch can be confirmed again or rejected.
+    Raises ``NotFoundError`` for batches outside the user's conversations. No outcomes
+    means nothing in the batch was pending any more.
+    """
+    batch = conversations.get_owned_batch(db, user, batch_id, lock=True)
+    conversation_id = batch[0].conversation_id
+    ctx = ToolContext(db=db, user=user, conversation_id=conversation_id)
+    decision: Literal["confirmed", "rejected"] = "confirmed" if confirm else "rejected"
+    outcomes: list[BatchOutcome] = []
+    stopped = False
+    for action in batch:
+        if action.status is not ChatActionStatus.PROPOSED:
+            continue
+        if stopped:
+            outcomes.append(BatchOutcome(action.id, "skipped"))
+            continue
+        result = registry.confirm(ctx, action.id) if confirm else registry.reject(ctx, action.id)
+        outcomes.append(BatchOutcome(action.id, _CARD_STATUS[result.status].value, result))
+        stopped = confirm and not result.ok
+    if outcomes:
+        entries = []
+        for outcome in outcomes:
+            entry: dict[str, Any] = {"action_id": outcome.action_id, "outcome": outcome.outcome}
+            if outcome.result is not None:
+                entry |= outcome.result.as_dict()
+            entries.append(entry)
+        db.add(
+            ChatMessage(
+                conversation_id=conversation_id,
+                role=ChatRole.TOOL,
+                content=_clip(
+                    _compact(
+                        [{"batch_id": str(batch_id), "decision": decision, "results": entries}]
+                    ),
+                    TOOL_MESSAGE_CHARS,
+                ),
+            )
+        )
+        conversation = db.get(ChatConversation, conversation_id)
+        if conversation is not None:
+            conversations.touch(db, conversation)
+        db.flush()
+    return BatchDecision(batch_id, decision, outcomes)
