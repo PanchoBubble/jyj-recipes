@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDown, ArrowLeft, ArrowUp, Minus, Plus, Trash2 } from 'lucide-react'
-import { useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import {
   useFieldArray,
   useForm,
@@ -9,9 +9,18 @@ import {
   type FieldErrors,
   type UseFormReturn,
 } from 'react-hook-form'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useBlocker, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,6 +68,11 @@ const DIMENSIONS: { value: MeasurableDimension; label: string }[] = [
   { value: 'volume', label: 'Volume' },
   { value: 'count', label: 'Pieces' },
 ]
+
+// Marks the post-save redirect so the unsaved-changes guard lets it through before the re-render.
+interface SavedState {
+  saved: true
+}
 
 const selectClass = 'w-full [&_select]:h-11'
 
@@ -111,8 +125,17 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
     shouldFocusError: true,
   })
   const lines = useFieldArray({ control: form.control, name: 'ingredients' })
-  const { errors, isSubmitting } = form.formState
+  const { errors, isSubmitting, isDirty } = form.formState
   const backTo = recipe ? `/recipes/${recipe.id}` : '/recipes'
+  const [persisted, setPersisted] = useState(false)
+  const unsaved = !persisted && (isDirty || photo !== null)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      unsaved &&
+      !(nextLocation.state as SavedState | null)?.saved &&
+      currentLocation.pathname !== nextLocation.pathname,
+  )
+  useUnsavedChangesPrompt(unsaved)
 
   const onSubmit = form.handleSubmit(async (values) => {
     setFormError(null)
@@ -141,6 +164,8 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
       return
     }
 
+    setPersisted(true)
+
     if (!recipe && photo) {
       // The recipe exists now, so a failed upload must not keep the user here where a
       // second submit would create a duplicate; the detail page can retry the photo.
@@ -158,7 +183,7 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
     } else {
       toast.success(recipe ? `Saved ${saved.name}` : `Added ${saved.name}`)
     }
-    navigate(`/recipes/${saved.id}`, { replace: true })
+    navigate(`/recipes/${saved.id}`, { replace: true, state: { saved: true } satisfies SavedState })
   })
 
   const servingsField = form.register('default_servings', { valueAsNumber: true })
@@ -170,6 +195,28 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+      <AlertDialog
+        open={blocker.state === 'blocked'}
+        onOpenChange={(open) => {
+          if (!open && blocker.state === 'blocked') blocker.reset()
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your edits to this recipe haven't been saved. Leaving now throws them away.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="h-11">Keep editing</AlertDialogCancel>
+            <Button variant="destructive" className="h-11" onClick={() => blocker.proceed?.()}>
+              Discard
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Link
         to={backTo}
         className="-ml-2 inline-flex h-11 w-fit items-center gap-1 rounded-lg px-2 text-sm text-muted-foreground hover:text-foreground"
@@ -311,6 +358,19 @@ function RecipeEditor({ recipe }: { recipe: Recipe | null }) {
       </div>
     </form>
   )
+}
+
+function useUnsavedChangesPrompt(active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      // Older Safari and Chrome only prompt when returnValue is set.
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [active])
 }
 
 interface LineProps {

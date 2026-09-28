@@ -490,6 +490,86 @@ describe('recipe editor', () => {
   })
 })
 
+describe('recipe editor unsaved changes', () => {
+  function beforeUnloadPrevented() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('leaves without asking when nothing changed', async () => {
+    serveCatalog()
+    serveRecipe(pancakes)
+    const { router } = renderApp('/recipes/7/edit')
+    const user = userEvent.setup()
+
+    expect(await screen.findByDisplayValue('Pancakes')).toBeInTheDocument()
+    expect(beforeUnloadPrevented()).toBe(false)
+    await user.click(screen.getByRole('link', { name: 'Back to recipe' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/7'))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('asks before discarding edits, and keeps them when the user stays', async () => {
+    serveCatalog()
+    serveRecipe(pancakes)
+    const { router } = renderApp('/recipes/7/edit')
+    const user = userEvent.setup()
+
+    const name = await screen.findByDisplayValue('Pancakes')
+    await user.type(name, ' deluxe')
+    expect(beforeUnloadPrevented()).toBe(true)
+
+    await user.click(screen.getByRole('link', { name: 'Back to recipe' }))
+    const dialog = await screen.findByRole('alertdialog', { name: 'Discard unsaved changes?' })
+    expect(router.state.location.pathname).toBe('/recipes/7/edit')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Keep editing' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(router.state.location.pathname).toBe('/recipes/7/edit')
+    expect(screen.getByLabelText('Name')).toHaveValue('Pancakes deluxe')
+
+    await user.click(screen.getByRole('link', { name: 'Back to recipe' }))
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Discard' }),
+    )
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/7'))
+    expect(beforeUnloadPrevented()).toBe(false)
+  })
+
+  it('guards a new recipe with only a pending photo', async () => {
+    serveCatalog()
+    const { router } = renderApp('/recipes/new')
+    const user = userEvent.setup()
+
+    await screen.findByRole('button', { name: 'Create recipe' })
+    const file = new File(['x'], 'pancakes.jpg', { type: 'image/jpeg' })
+    await user.upload(screen.getByLabelText('Photo file from library'), file)
+    await user.click(screen.getByRole('link', { name: /stock/i }))
+
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/recipes/new')
+  })
+
+  it('saving clears the guard', async () => {
+    serveCatalog()
+    serveRecipe(pancakes)
+    server.use(
+      http.patch(`${API}/recipes/7`, () => HttpResponse.json({ ...pancakes, name: 'Pancakes deluxe' })),
+    )
+    const { router } = renderApp('/recipes/7/edit')
+    const user = userEvent.setup()
+
+    await user.type(await screen.findByDisplayValue('Pancakes'), ' deluxe')
+    await user.click(screen.getByRole('button', { name: 'Save recipe' }))
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/recipes/7'))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(beforeUnloadPrevented()).toBe(false)
+  })
+})
+
 describe('mapRecipeProblem', () => {
   const err = (extra: Record<string, unknown>) =>
     new ApiError({ type: 'about:blank', title: 'Conflict', status: 409, ...extra })
