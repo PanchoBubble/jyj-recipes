@@ -653,7 +653,7 @@ describe('chat bubble', () => {
     expect(within(bubble).getByText('1')).toBeInTheDocument()
   })
 
-  it('floats at --chat-bubble-bottom, raised above a bottom dock such as the recipe tray', async () => {
+  it('floats at --chat-bubble-bottom just above the tab bar, even over a bottom dock', async () => {
     server.use(...chatHandlers())
     renderApp('/recipes')
     const bubble = await screen.findByRole('button', { name: 'Open chat' })
@@ -662,14 +662,9 @@ describe('chat bubble', () => {
 
     const dock = document.createElement('div')
     dock.dataset.bottomDock = ''
-    dock.getBoundingClientRect = () => ({ top: window.innerHeight - 200 }) as DOMRect
     act(() => document.body.append(dock))
-    await waitFor(() =>
-      expect(bubbleBottom(bubble)).toBe(`max(${DEFAULT_BUBBLE_BOTTOM}, calc(200px + 1rem))`),
-    )
-
+    expect(bubbleBottom(bubble)).toBe(DEFAULT_BUBBLE_BOTTOM)
     act(() => dock.remove())
-    await waitFor(() => expect(bubbleBottom(bubble)).toBe(DEFAULT_BUBBLE_BOTTOM))
   })
 
   it('takes the bubble offset from the route handle', async () => {
