@@ -24,6 +24,7 @@ export function Composer({
   onStop,
   voiceAvailable = false,
   initialText = '',
+  onFocusChange,
 }: {
   disabled: boolean
   streaming: boolean
@@ -33,6 +34,7 @@ export function Composer({
   voiceAvailable?: boolean
   /** Starts the box with this text and focuses it, e.g. a picked suggestion. */
   initialText?: string
+  onFocusChange?: (focused: boolean) => void
 }) {
   const [text, setText] = useState(initialText)
   const [source, setSource] = useState<MessageInput>(TYPED)
@@ -93,6 +95,10 @@ export function Composer({
     <form
       data-vaul-no-drag
       className="shrink-0 border-t bg-popover"
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onFocusChange?.(false)
+      }}
       onSubmit={(event) => {
         event.preventDefault()
         submit()

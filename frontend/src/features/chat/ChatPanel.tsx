@@ -1,9 +1,11 @@
 import { ArrowLeft, History, SquarePen, X } from 'lucide-react'
-import { useSyncExternalStore, type MouseEvent } from 'react'
+import { useSyncExternalStore, type CSSProperties, type MouseEvent } from 'react'
 import { Drawer } from 'vaul'
 
 import { Button } from '@/components/ui/button'
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
 import { cn } from '@/lib/utils'
+import { useVisualViewport } from '@/lib/useVisualViewport'
 
 import { useConversation } from './api'
 import { useChat } from './ChatProvider'
@@ -31,6 +33,9 @@ export function ChatPanel() {
   const wide = useWide()
   const current = useConversation(chat.conversationId)
   const listing = chat.view === 'list'
+  const sheet = chat.open && !wide
+  const viewport = useVisualViewport(sheet)
+  useBodyScrollLock(sheet)
   const subtitle = listing
     ? 'Recent chats'
     : chat.conversationId === null
@@ -47,6 +52,10 @@ export function ChatPanel() {
       open={chat.open}
       onOpenChange={(next) => (next ? chat.openChat() : chat.closeChat())}
       direction={wide ? 'right' : 'bottom'}
+      // The sheet follows the keyboard itself (see --keyboard-inset); vaul's version fights it and
+      // its position:fixed body lock makes iOS jump.
+      repositionInputs={false}
+      noBodyStyles
     >
       <Drawer.Portal>
         <Drawer.Overlay
@@ -56,11 +65,20 @@ export function ChatPanel() {
         <Drawer.Content
           aria-describedby={undefined}
           onClick={closeOnLink}
+          data-testid="chat-panel"
+          style={
+            sheet
+              ? ({
+                  '--keyboard-inset': `${viewport.keyboardInset}px`,
+                  ...(viewport.height !== null && { '--visual-viewport-height': `${viewport.height}px` }),
+                } as CSSProperties)
+              : undefined
+          }
           className={cn(
             'fixed z-50 flex flex-col overflow-hidden border bg-popover text-sm text-popover-foreground shadow-2xl ring-1 ring-black/5 outline-none dark:border-white/15 dark:ring-white/5',
             wide
               ? 'inset-y-2 right-2 w-[420px] max-w-[calc(100%-1rem)] rounded-2xl pt-[env(safe-area-inset-top)]'
-              : 'inset-x-0 bottom-0 h-[85svh] rounded-t-3xl border-b-0',
+              : 'inset-x-0 bottom-(--keyboard-inset,0px) h-[min(85svh,calc(var(--visual-viewport-height,100svh)-0.75rem))] rounded-t-3xl border-b-0',
           )}
         >
           {!wide && <Drawer.Handle className="mt-2.5 mb-1 !h-1.5 !w-12 shrink-0 !bg-muted-foreground/40" />}

@@ -145,9 +145,10 @@ test('the week and the recipe panel split the screen and the page never scrolls'
   expect(panel.y + panel.height).toBeLessThanOrEqual(nav.y + 1)
   expect(week.height / (week.height + panel.height)).toBeGreaterThan(0.5)
 
-  // The chat bubble floats above the panel, clear of its cards.
+  // The chat bubble floats just above the tab bar, over the panel's bottom edge.
   const bubble = (await page.getByRole('button', { name: /^Open chat/ }).boundingBox())!
-  expect(bubble.y + bubble.height).toBeLessThanOrEqual(panel.y)
+  expect(bubble.y + bubble.height).toBeLessThanOrEqual(nav.y)
+  expect(bubble.y).toBeGreaterThan(panel.y)
 })
 
 test('dragging a recipe to the edge auto-scrolls to an off-screen day and plans it there', async ({

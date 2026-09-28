@@ -1,5 +1,5 @@
 import { LoaderCircle, RotateCcw } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -34,13 +34,33 @@ export function Conversation() {
   const conversation = useConversation(conversationId)
   const health = useChatHealth()
   const problem = healthProblem(health.data)
-  const end = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const composing = useRef(false)
   const [prefill, setPrefill] = useState({ text: '', round: 0 })
   const draft = conversationId === null
 
+  // Scrolls only the list: scrollIntoView would also scroll the page behind the sheet on iOS.
+  const scrollToEnd = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = list.current
+    if (!el) return
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior })
+    else el.scrollTop = el.scrollHeight
+  }, [])
+
   useEffect(() => {
-    end.current?.scrollIntoView?.({ block: 'end', behavior: 'smooth' })
-  }, [conversation.data, live])
+    scrollToEnd()
+  }, [conversation.data, live, scrollToEnd])
+
+  // The list shrinks when the keyboard opens under a focused composer; keep the latest in view.
+  useEffect(() => {
+    const el = list.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (composing.current) scrollToEnd('auto')
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [scrollToEnd])
 
   const liveView = (showUser: boolean) =>
     live && (
@@ -55,7 +75,11 @@ export function Conversation() {
 
   return (
     <>
-      <div data-vaul-no-drag className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
+      <div
+        ref={list}
+        data-testid="chat-messages"
+        data-vaul-no-drag
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
         {problem && <HealthBanner message={problem} />}
 
         {draft ? (
@@ -82,7 +106,6 @@ export function Conversation() {
             {live && liveView(!storedLastUser(conversation.data, live))}
           </ol>
         )}
-        <div ref={end} />
       </div>
 
       <Composer
@@ -93,6 +116,10 @@ export function Conversation() {
         onSend={(text, source) => void send(text, source)}
         onStop={stop}
         voiceAvailable={health.data?.stt?.available === true}
+        onFocusChange={(focused) => {
+          composing.current = focused
+          if (focused) scrollToEnd()
+        }}
       />
     </>
   )

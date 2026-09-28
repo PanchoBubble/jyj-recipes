@@ -111,6 +111,10 @@ export async function mockApi(page: Page) {
         return json(route, { id: 1, username: 'alice', display_name: 'Alice' })
       }
       if (method === 'GET' && path === '/meal-slots') return json(route, slots)
+      if (method === 'GET' && path === '/chat/health') {
+        return json(route, { codex: { available: true, detail: 'ready' } })
+      }
+      if (method === 'GET' && path === '/chat/conversations') return json(route, [])
       if (method === 'GET' && path === '/recipes') {
         return json(route, { items: recipes, total: recipes.length, page: 1, page_size: 20 })
       }
