@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
-.PHONY: env-check up down build logs test-db-up test-db-down ca-export whisper-download
+.PHONY: env-check up down build logs test-db-up test-db-down ca-export whisper-download backup-now restore backup-drill
 
 BACKEND := backend
 FRONTEND := frontend
@@ -20,6 +20,9 @@ help:
 	@echo "make ca-export copy Caddy's LAN root CA to ./caddy-root.crt (stack must be up)"
 	@echo "make test-db-up / test-db-down  throwaway Postgres on 127.0.0.1:55432"
 	@echo "make whisper-download [model=base]  fetch + verify a whisper model into the whisper-models volume"
+	@echo "make backup-now [label=pre-upgrade]  pg_dump + photo snapshot into BACKUP_DIR now"
+	@echo "make restore db=FILE photos=DIR force=yes  restore a backup (destroys current data, prompts)"
+	@echo "make backup-drill  backup/destroy/restore/verify in a throwaway jyj-drill project"
 
 install:
 	cd $(BACKEND) && uv sync --locked
@@ -90,3 +93,12 @@ ca-export:
 model ?= tiny
 whisper-download:
 	$(COMPOSE) run --rm --no-deps backend python -m jyj.stt.download $(model)
+
+backup-now: env-check
+	$(COMPOSE) --profile backup run --rm backup once $(label)
+
+restore: env-check
+	deploy/backup/restore.sh $(if $(db),--db "$(db)") $(if $(photos),--photos "$(photos)") $(if $(filter yes,$(force)),--yes-destroy-current-data)
+
+backup-drill:
+	deploy/backup/drill.sh

@@ -4,6 +4,9 @@
 !.env.example
 caddy-root.crt
 
+# Local backups (BACKUP_DIR default)
+backups/
+
 # Python
 __pycache__/
 *.py[cod]

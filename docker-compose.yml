@@ -75,6 +75,34 @@ services:
         condition: service_healthy
     mem_limit: 64m
 
+  # Nightly pg_dump + photo snapshots into BACKUP_DIR (docs/BACKUP.md). Enable with
+  # COMPOSE_PROFILES=backup in .env. Never mount codex-home or caddy-data here.
+  backup:
+    build:
+      context: ./deploy/backup
+    image: jyj-backup
+    profiles: [backup]
+    restart: unless-stopped
+    init: true
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      TZ: ${TZ:-UTC}
+      BACKUP_CRON: ${BACKUP_CRON:-03:30}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_UID: ${BACKUP_UID:-1000}
+      BACKUP_GID: ${BACKUP_GID:-1000}
+    volumes:
+      - photos:/photos:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+
   db-test:
     image: postgres:16-alpine
     profiles: [test]
