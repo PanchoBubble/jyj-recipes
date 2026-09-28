@@ -3,6 +3,11 @@
 #   JYJ_LAN_IP    optional: also serve https://<ip> (internal cert with an IP SAN)
 #   JYJ_TLS       internal (default, option A) | tailscale (option C) | dns (option B, needs a DNS plugin build)
 
+{
+	# Clients connecting to https://<ip> send no SNI; without this Caddy has no cert to pick.
+	default_sni {$JYJ_DEFAULT_SNI:recipes.home.arpa}
+}
+
 (tls-internal) {
 	tls internal
 }

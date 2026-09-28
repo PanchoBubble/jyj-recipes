@@ -77,6 +77,7 @@ services:
     environment:
       JYJ_HOSTNAME: ${JYJ_HOSTNAME:-recipes.home.arpa}
       JYJ_LAN_IP: ${JYJ_LAN_IP:-}
+      JYJ_DEFAULT_SNI: ${JYJ_LAN_IP:-${JYJ_HOSTNAME:-recipes.home.arpa}}
       JYJ_TLS: ${JYJ_TLS:-internal}
       JYJ_DNS_PROVIDER: ${JYJ_DNS_PROVIDER:-}
       JYJ_DNS_API_TOKEN: ${JYJ_DNS_API_TOKEN:-}
