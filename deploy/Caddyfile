@@ -30,6 +30,12 @@
 	}
 }
 
+# Same problem+json shape as the backend's own 413.
+(too-large) {
+	header Content-Type application/problem+json
+	respond `{"type":"about:blank","title":"Request Entity Too Large","status":413,"detail":"Request body is too large"}` 413
+}
+
 (app) {
 	encode zstd gzip
 	import security-headers
@@ -39,8 +45,29 @@
 		respond 404
 	}
 
-	# With no trusted_proxies set, Caddy discards client-sent X-Forwarded-For and sends the peer IP.
+	# Slightly above the backend's own caps (photo 10 MiB, voice 5 MiB, plus multipart
+	# framing) so oversized uploads stop here and the backend stays the precise limit.
+	# request_body only trips while streaming, after the backend has already answered a
+	# large Content-Length itself, so declared sizes are refused up front: >= 6 MB and >= 11 MB.
 	handle /api/* {
+		@transcribe_too_large {
+			path /api/v1/chat/transcribe
+			header_regexp Content-Length `^0*(?:[1-9]\d{7,}|[6-9]\d{6})$`
+		}
+		handle @transcribe_too_large {
+			import too-large
+		}
+		@too_large header_regexp Content-Length `^0*(?:[1-9]\d{8,}|1[1-9]\d{6}|[2-9]\d{7})$`
+		handle @too_large {
+			import too-large
+		}
+		request_body /api/v1/chat/transcribe {
+			max_size 6MB
+		}
+		request_body {
+			max_size 11MB
+		}
+		# With no trusted_proxies set, Caddy discards client-sent X-Forwarded-For and sends the peer IP.
 		reverse_proxy backend:8000
 	}
 

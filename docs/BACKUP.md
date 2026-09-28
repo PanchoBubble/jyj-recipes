@@ -84,7 +84,7 @@ Either `db=` or `photos=` can be given alone. What it does:
 
 Direct use: `deploy/backup/restore.sh --help`. `-p PROJECT` targets another compose project.
 
-If the backup came from an older app version, run `docker compose exec backend alembic upgrade head` after restoring.
+If the backup came from an older app version, run `docker compose run --rm migrate` after restoring.
 
 ## Restore drill
 

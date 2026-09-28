@@ -14,6 +14,8 @@ class Settings(BaseSettings):
         env_file=("../.env", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        # Validation errors would otherwise echo raw inputs, secrets included, into container logs.
+        hide_input_in_errors=True,
     )
 
     app_env: Literal["development", "test", "production"] = "development"
@@ -51,6 +53,8 @@ class Settings(BaseSettings):
             raise ValueError(f"{names} must be set when APP_ENV=production")
         if PLACEHOLDER in self.session_secret.get_secret_value():
             raise ValueError("SESSION_SECRET still holds the placeholder value")
+        if PLACEHOLDER in self.database_url:
+            raise ValueError("DATABASE_URL still uses the placeholder POSTGRES_PASSWORD")
         if len(self.session_secret.get_secret_value()) < 32:
             raise ValueError("SESSION_SECRET must be at least 32 characters in production")
         if not self.session_cookie_secure:

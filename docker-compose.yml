@@ -20,16 +20,36 @@ services:
       start_period: 10s
     mem_limit: 256m
 
-  backend:
-    build:
+  # One-shot schema upgrade; the backend only starts once this exits 0, so it never runs on a
+  # half-migrated database and a failed migration stays visible in `docker compose ps -a`.
+  migrate:
+    build: &backend-build
       context: ./backend
       target: runtime
     image: jyj-backend
-    restart: unless-stopped
-    env_file:
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    env_file: &backend-env-file
       - path: .env
         required: false
     environment:
+      # Pinned here rather than read from .env, whose APP_ENV=development is for host dev.
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+
+  backend:
+    build: *backend-build
+    image: jyj-backend
+    restart: unless-stopped
+    env_file: *backend-env-file
+    environment:
+      APP_ENV: production
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       CODEX_HOME: /var/lib/codex
       PHOTOS_DIR: /var/lib/jyj/photos
@@ -42,6 +62,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     mem_limit: 384m
 
   web:

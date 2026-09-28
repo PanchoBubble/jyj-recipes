@@ -56,6 +56,13 @@ def test_secrets_are_not_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
         ({"SESSION_SECRET": STRONG_SECRET}, "DATABASE_URL must be set"),
         ({"DATABASE_URL": PROD_URL}, "SESSION_SECRET must be set"),
         ({"DATABASE_URL": PROD_URL, "SESSION_SECRET": "change-me"}, "placeholder"),
+        (
+            {
+                "DATABASE_URL": "postgresql+psycopg://jyj:change-me@db:5432/jyj",
+                "SESSION_SECRET": STRONG_SECRET,
+            },
+            "placeholder POSTGRES_PASSWORD",
+        ),
         ({"DATABASE_URL": PROD_URL, "SESSION_SECRET": "short"}, "at least 32"),
     ],
 )

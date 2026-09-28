@@ -11,6 +11,7 @@ cat >"$env_file" <<ENV
 POSTGRES_DB=jyj
 POSTGRES_USER=jyj
 POSTGRES_PASSWORD=drill-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+SESSION_SECRET=drill-$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
 BACKUP_DIR=$work/backups
 BACKUP_UID=$(id -u)
 BACKUP_GID=$(id -g)

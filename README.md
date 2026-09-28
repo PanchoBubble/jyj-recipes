@@ -27,7 +27,7 @@ Design, stack and milestones: [docs/PLAN.md](docs/PLAN.md). Issues are tracked w
 | `make migration name="..."` | autogenerate an Alembic revision from the models |
 | `make ca-export` | copy Caddy's LAN root CA to `./caddy-root.crt` (stack must be up) |
 
-Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/readyz` also pings the database and returns 503 `{"status":"unavailable"}` with no details when it is down; it is for internal checks and is not proxied under `/api`. Through Caddy the same health check is `https://<JYJ_HOSTNAME>/api/healthz`.
+Health check: `curl http://127.0.0.1:8000/healthz` returns `{"status":"ok"}`. `/readyz` also pings the database and returns 503 `{"status":"unavailable"}` with no details when it is down; it is for internal checks and is not proxied under `/api`. The backend container healthcheck uses `/readyz`, and `web` waits for it. Through Caddy the same health check is `https://<JYJ_HOSTNAME>/api/healthz`.
 
 ## HTTPS on the LAN
 
@@ -65,3 +65,16 @@ The backend image ships `whisper-cli` (whisper.cpp v1.9.1, built for armv8.2-a+d
 ## Config
 
 Copy `.env.example` to `.env` and replace the placeholders. `.env` is git-ignored; never commit real secrets.
+
+## Deploy (Pi)
+
+```sh
+cp .env.example .env
+openssl rand -hex 24      # paste as POSTGRES_PASSWORD
+openssl rand -base64 48   # paste as SESSION_SECRET
+make up                   # docker compose up -d --wait
+```
+
+- The compose stack runs the backend with `APP_ENV=production` regardless of `.env` (whose `APP_ENV=development` only affects `make dev`). Production refuses to start while `SESSION_SECRET` or `POSTGRES_PASSWORD` is still `change-me`, `SESSION_SECRET` is under 32 characters, or `SESSION_COOKIE_SECURE=false`. Container dev uses `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`, which switches back to development.
+- Migrations run automatically: the one-shot `migrate` service runs `alembic upgrade head` after `db` is healthy, and `backend` starts only if it exits 0. A failed migration shows as `migrate exited (1)` in `docker compose ps -a`; read it with `docker compose logs migrate`, fix, then `make up` again. Re-run by hand with `docker compose run --rm migrate`.
+- Caddy rejects request bodies over 11 MB on `/api/*` and 6 MB on `/api/v1/chat/transcribe` with 413 before they reach the backend, which enforces its own slightly lower caps.
