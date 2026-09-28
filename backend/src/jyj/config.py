@@ -34,9 +34,11 @@ class Settings(BaseSettings):
     chat_tool_timeout_seconds: float = Field(default=3.0, gt=0, le=60)
 
     whisper_binary: str = "whisper-cli"
-    whisper_model_path: Path = Path("/var/lib/jyj/whisper/ggml-tiny.bin")
+    whisper_model_path: Path = Path("/var/lib/jyj/whisper/ggml-small.bin")
+    # ISO 639-1 code, or "auto"; auto-detection is unreliable on short clips.
+    whisper_language: str = Field(default="es", pattern=r"^(auto|[a-z]{2,3})$")
     whisper_threads: int = Field(default=4, ge=1, le=16)
-    whisper_timeout_seconds: float = Field(default=30.0, gt=0)
+    whisper_timeout_seconds: float = Field(default=60.0, gt=0)
     stt_max_bytes: int = Field(default=5 * 1024 * 1024, gt=0)
     stt_max_seconds: float = Field(default=60.0, gt=0)
     stt_low_confidence: float = Field(default=0.5, ge=0, le=1)

@@ -81,6 +81,7 @@ class Transcriber:
         *,
         whisper_binary: str,
         model_path: Path,
+        language: str = "es",
         threads: int = 4,
         timeout_seconds: float = 30.0,
         max_bytes: int = 5 * 1024 * 1024,
@@ -90,6 +91,7 @@ class Transcriber:
     ) -> None:
         self.whisper_binary = whisper_binary
         self.model_path = model_path
+        self.language = language
         self.threads = threads
         self.timeout_seconds = timeout_seconds
         self.max_bytes = max_bytes
@@ -103,6 +105,7 @@ class Transcriber:
         return cls(
             whisper_binary=settings.whisper_binary,
             model_path=settings.whisper_model_path,
+            language=settings.whisper_language,
             threads=settings.whisper_threads,
             timeout_seconds=settings.whisper_timeout_seconds,
             max_bytes=settings.stt_max_bytes,
@@ -208,7 +211,7 @@ class Transcriber:
             "--file",
             str(wav),
             "--language",
-            "auto",
+            self.language,
             "--threads",
             str(self.threads),
             "--output-json-full",

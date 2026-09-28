@@ -152,7 +152,7 @@ def test_transcribes_and_parses_result(bin_dir: Path, work_dir: Path, model: Pat
     call = whisper_call(bin_dir)
     wargs = call["args"]
     assert isinstance(wargs, list)
-    assert wargs[wargs.index("--language") + 1] == "auto"
+    assert wargs[wargs.index("--language") + 1] == "es"
     assert wargs[wargs.index("--threads") + 1] == "3"
     assert wargs[wargs.index("--model") + 1] == str(model)
     assert wargs[wargs.index("--prompt") + 1] == "tomate cebolla"
@@ -343,6 +343,7 @@ def test_from_settings(tmp_path: Path) -> None:
         _env_file=None,
         whisper_binary="wc",
         whisper_model_path=tmp_path / "m.bin",
+        whisper_language="auto",
         whisper_threads=2,
         whisper_timeout_seconds=9,
         stt_max_bytes=100,
@@ -353,6 +354,7 @@ def test_from_settings(tmp_path: Path) -> None:
 
     assert transcriber.whisper_binary == "wc"
     assert transcriber.model_path == tmp_path / "m.bin"
+    assert transcriber.language == "auto"
     assert (transcriber.threads, transcriber.timeout_seconds) == (2, 9)
     assert (transcriber.max_bytes, transcriber.max_seconds) == (100, 10)
 
@@ -361,10 +363,24 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WHISPER_MODEL_PATH", raising=False)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
-    assert settings.whisper_model_path == Path("/var/lib/jyj/whisper/ggml-tiny.bin")
+    assert settings.whisper_model_path == Path("/var/lib/jyj/whisper/ggml-small.bin")
+    assert settings.whisper_language == "es"
+    assert settings.whisper_timeout_seconds == 60
     assert settings.whisper_threads == 4
     assert settings.stt_max_bytes == 5 * 1024 * 1024
     assert settings.stt_max_seconds == 60
+
+
+@pytest.mark.parametrize("language", ["spanish", "ES", "", "es;rm"])
+def test_settings_reject_bad_language(language: str) -> None:
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, whisper_language=language)  # type: ignore[call-arg]
+
+
+def test_download_pins_new_models() -> None:
+    assert dl.MODELS["small"].filename == "ggml-small.bin"
+    assert dl.MODELS["turbo"].filename == "ggml-large-v3-turbo-q5_0.bin"
+    assert all(len(model.sha256) == 64 for model in dl.MODELS.values())
 
 
 def test_download_verifies_checksum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

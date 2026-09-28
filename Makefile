@@ -20,7 +20,7 @@ help:
 	@echo "make ca-export copy Caddy's LAN root CA to ./caddy-root.crt (stack must be up)"
 	@echo "make test-db-up / test-db-down  throwaway Postgres on 127.0.0.1:55432"
 	@echo "make test-db-prune [hours=3]  drop leftover per-run jyj_test_* databases"
-	@echo "make whisper-download [model=base]  fetch + verify a whisper model into the whisper-models volume"
+	@echo "make whisper-download [model=tiny|base|small|turbo]  fetch + verify a whisper model into the whisper-models volume"
 	@echo "make backup-now [label=pre-upgrade]  pg_dump + photo snapshot into BACKUP_DIR now"
 	@echo "make restore db=FILE photos=DIR force=yes  restore a backup (destroys current data, prompts)"
 	@echo "make backup-drill  backup/destroy/restore/verify in a throwaway jyj-drill project"
@@ -101,7 +101,7 @@ ca-export:
 	$(COMPOSE) cp web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
 	@openssl x509 -in caddy-root.crt -noout -subject -enddate -fingerprint -sha256 2>/dev/null || true
 
-model ?= tiny
+model ?= small
 whisper-download:
 	$(COMPOSE) run --rm --no-deps backend python -m jyj.stt.download $(model)
 
