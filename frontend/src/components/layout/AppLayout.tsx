@@ -1,7 +1,7 @@
 import {
   BookOpen,
   CalendarDays,
-  Package,
+  Refrigerator,
   Settings,
   ShoppingCart,
   type LucideIcon,
@@ -25,7 +25,7 @@ const tabs: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/recipes', label: 'Recipes', icon: BookOpen },
   { to: '/shopping', label: 'Shopping', icon: ShoppingCart },
-  { to: '/stock', label: 'Stock', icon: Package },
+  { to: '/pantry', label: 'Pantry', icon: Refrigerator },
 ]
 
 function useHandle<K extends keyof RouteHandle>(key: K): RouteHandle[K] | undefined {

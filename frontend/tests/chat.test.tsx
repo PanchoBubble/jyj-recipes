@@ -7,7 +7,8 @@ import { createMemoryRouter } from 'react-router'
 import App from '@/App'
 import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { plannedMealKeys } from '@/features/calendar/api'
-import type { ActionOut, ChatHealth, ConversationDetail } from '@/features/chat/api'
+import { actionLink, toolLabel } from '@/features/chat/actions'
+import type { ActionOut, ChatAction, ChatHealth, ConversationDetail } from '@/features/chat/api'
 import { DEFAULT_BUBBLE_BOTTOM } from '@/features/chat/bubbleOffset'
 import { createSseParser, type SseMessage } from '@/features/chat/sse'
 import { setDragging } from '@/lib/dragging'
@@ -171,7 +172,7 @@ describe('chat', () => {
     const panel = await screen.findByRole('dialog', { name: 'Assistant' })
     const welcome = within(panel).getByRole('region', { name: 'New chat' })
     expect(within(welcome).getByRole('button', { name: 'Plan dinners for this week' })).toBeInTheDocument()
-    expect(within(welcome).getByRole('button', { name: 'Add 1 kg flour to stock' })).toBeInTheDocument()
+    expect(within(welcome).getByRole('button', { name: 'Add 1 kg flour to the pantry' })).toBeInTheDocument()
     expect(within(panel).queryByRole('list', { name: 'Messages' })).not.toBeInTheDocument()
 
     await user.click(within(welcome).getByRole('button', { name: 'What do I need to buy for the weekend?' }))
@@ -347,6 +348,19 @@ describe('chat', () => {
     expect(invalidate).not.toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: plannedMealKeys.all }),
     )
+  })
+
+  it('labels stock tool cards with pantry wording and links to /pantry', () => {
+    const action = {
+      id: 41,
+      tool: 'adjust_stock',
+      status: 'executed',
+      summary: 'adjust stock: Flour',
+      data: { ingredient_id: 3, name: 'Flour' },
+    } as unknown as ChatAction
+    expect(toolLabel(action)).toBe('Updated pantry')
+    expect(toolLabel({ tool: 'set_stock', status: 'proposed' })).toBe('Set pantry amount')
+    expect(actionLink(action)).toEqual({ to: '/pantry', label: 'Open pantry' })
   })
 
   it('refreshes the calendar after a meal is planned', async () => {

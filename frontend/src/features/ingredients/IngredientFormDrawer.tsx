@@ -77,7 +77,7 @@ function toInput(values: FormValues): IngredientInput {
 }
 
 const REFERENCE_LABELS: Record<string, string> = {
-  stock_movements: 'stock history',
+  stock_movements: 'pantry history',
   recipe_ingredients: 'recipes',
 }
 
@@ -190,7 +190,7 @@ function IngredientForm({
       <DrawerHeader className="text-left">
         <DrawerTitle className="text-lg">{ingredient ? 'Edit ingredient' : 'New ingredient'}</DrawerTitle>
         <DrawerDescription>
-          {ingredient ? 'Changes apply to recipes and stock.' : 'Stock starts at zero.'}
+          {ingredient ? 'Changes apply to recipes and the pantry.' : 'Starts at zero in the pantry.'}
         </DrawerDescription>
       </DrawerHeader>
 
@@ -262,7 +262,7 @@ function IngredientForm({
           <FieldHint
             id={`${id}-category-hint`}
             error={errors.category?.message}
-            hint="Optional. Groups the stock and shopping lists."
+            hint="Optional. Groups the pantry and shopping lists."
           />
         </div>
 

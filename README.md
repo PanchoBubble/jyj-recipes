@@ -1,6 +1,8 @@
 # jyj recipes
 
-Self-hosted household app for recipes, stock, a meal calendar and shopping lists, with an optional chat and voice assistant. Runs on a Raspberry Pi on the LAN.
+Self-hosted household app for recipes, a pantry (what's at home), a meal calendar and shopping lists, with an optional chat and voice assistant. Runs on a Raspberry Pi on the LAN.
+
+The pantry lives at `/pantry` in the app (`/stock` redirects there). Its API, tables and chat tools keep the internal name `stock` (`/api/v1/stock`, `get_stock`, `adjust_stock`, `set_stock`).
 
 Design, stack and milestones: [docs/PLAN.md](docs/PLAN.md). Issues are tracked with `bd` (see [AGENTS.md](AGENTS.md)).
 
@@ -52,7 +54,7 @@ The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj
 
 ## Chat
 
-`POST /api/v1/chat/conversations/{id}/messages` runs one assistant turn and streams Server-Sent Events: `status`, `action` (executed or proposed, with its action id), `assistant`, `error` (sanitized) and a final `done`. Proposed actions (deletes, stock overwrites) wait for `POST /api/v1/chat/actions/{id}/confirm` or `/reject`. A turn with more than 5 writes runs none of them: all of them (up to 25) are stored as proposals under one batch id and the stream sends a single `action` card with `tool: "batch"`, its `batch_id` and the member cards in `actions`. `POST /api/v1/chat/batches/{id}/confirm` runs the pending members in order and stops at the first one that does not succeed (the rest come back as `skipped` and stay proposed, so the batch can be confirmed again); `/reject` declines them all. Both return each member with its `outcome`, and every member can still be decided on its own through its action id. Each tool call runs under a Postgres `statement_timeout` (`CHAT_TOOL_TIMEOUT_SECONDS`, default 3) and ends as status `timeout` when it runs over. Chat text is kept 90 days: the `chat-purge` service runs `jyj chat purge` at start and every 24 h (the `chat_actions` audit rows are kept; see docs/BACKUP.md). To run it by hand:
+`POST /api/v1/chat/conversations/{id}/messages` runs one assistant turn and streams Server-Sent Events: `status`, `action` (executed or proposed, with its action id), `assistant`, `error` (sanitized) and a final `done`. Proposed actions (deletes, pantry overwrites) wait for `POST /api/v1/chat/actions/{id}/confirm` or `/reject`. A turn with more than 5 writes runs none of them: all of them (up to 25) are stored as proposals under one batch id and the stream sends a single `action` card with `tool: "batch"`, its `batch_id` and the member cards in `actions`. `POST /api/v1/chat/batches/{id}/confirm` runs the pending members in order and stops at the first one that does not succeed (the rest come back as `skipped` and stay proposed, so the batch can be confirmed again); `/reject` declines them all. Both return each member with its `outcome`, and every member can still be decided on its own through its action id. Each tool call runs under a Postgres `statement_timeout` (`CHAT_TOOL_TIMEOUT_SECONDS`, default 3) and ends as status `timeout` when it runs over. Chat text is kept 90 days: the `chat-purge` service runs `jyj chat purge` at start and every 24 h (the `chat_actions` audit rows are kept; see docs/BACKUP.md). To run it by hand:
 
 ```sh
 docker compose exec backend jyj chat purge   # --days N to override

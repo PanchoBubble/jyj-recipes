@@ -56,7 +56,7 @@ export function cookSummary(result: CookResult, action: 'cook' | 'uncook'): Cook
     const delta = toMilli(impact.delta_base)
     if (delta !== 0n) {
       const amount = formatDisplay({ ...impact.display, amount: impact.display.amount.replace(/^-/, '') })
-      lines.push(`${delta < 0n ? 'Used' : 'Returned'} ${amount} ${impact.name}`)
+      lines.push(`${delta < 0n ? 'Used from pantry' : 'Returned to pantry'}: ${amount} ${impact.name}`)
     }
     const dimension = DIMENSION_BY_BASE[impact.base_unit]
     if (action === 'cook' && dimension && toMilli(impact.shortfall_base) > 0n) {
@@ -66,7 +66,7 @@ export function cookSummary(result: CookResult, action: 'cook' | 'uncook'): Cook
   }
   if (result.skipped.length > 0) {
     const skipped = result.skipped.map((s) => `${s.name} (${reasonLabel(s.reason)})`)
-    lines.push(`Stock not changed for ${skipped.join(', ')}`)
+    lines.push(`Pantry not changed for ${skipped.join(', ')}`)
   }
 
   return {
@@ -80,7 +80,7 @@ export function toastCookResult(result: CookResult, action: 'cook' | 'uncook') {
   const { title, lines, short } = cookSummary(result, action)
   const description =
     lines.length > 0 ? (
-      <ul aria-label="Stock changes" className="flex flex-col gap-0.5">
+      <ul aria-label="Pantry changes" className="flex flex-col gap-0.5">
         {lines.map((line) => (
           <li key={line}>{line}</li>
         ))}

@@ -323,7 +323,7 @@ export function useCompleteShoppingList(id: number) {
       toast.success(
         added === 0
           ? 'Shopping done'
-          : `Added ${added} ${added === 1 ? 'item' : 'items'} to stock`,
+          : `Added ${added} ${added === 1 ? 'item' : 'items'} to the pantry`,
       )
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: shoppingKeys.lists() }),

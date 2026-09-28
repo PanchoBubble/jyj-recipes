@@ -22,7 +22,7 @@ import type { LiveTurn } from './useChatStream'
 const SUGGESTIONS = [
   'Plan dinners for this week',
   'What do I need to buy for the weekend?',
-  'Add 1 kg flour to stock',
+  'Add 1 kg flour to the pantry',
 ]
 
 /**
@@ -104,7 +104,7 @@ function Welcome({ disabled, onPick }: { disabled: boolean; onPick: (text: strin
       <div className="flex flex-col gap-1">
         <p className="text-base font-medium">What can I help with?</p>
         <p className="text-sm text-muted-foreground">
-          Plan meals, build the shopping list or keep the stock up to date.
+          Plan meals, build the shopping list or keep the pantry up to date.
         </p>
       </div>
       <ul aria-label="Suggestions" className="flex flex-wrap gap-2">
@@ -148,7 +148,7 @@ function History({ detail }: { detail: ConversationDetail }) {
   if (visible.length === 0 && detail.actions.length === 0) {
     return (
       <li className="text-sm text-muted-foreground">
-        Try “Plan pasta for Friday dinner for 3” or “Add 1 kg flour to stock”.
+        Try “Plan pasta for Friday dinner for 3” or “Add 1 kg flour to the pantry”.
       </li>
     )
   }

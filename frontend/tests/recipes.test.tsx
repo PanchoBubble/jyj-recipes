@@ -546,7 +546,7 @@ describe('recipe editor unsaved changes', () => {
     await screen.findByRole('button', { name: 'Create recipe' })
     const file = new File(['x'], 'pancakes.jpg', { type: 'image/jpeg' })
     await user.upload(screen.getByLabelText('Photo file from library'), file)
-    await user.click(screen.getByRole('link', { name: /stock/i }))
+    await user.click(screen.getByRole('link', { name: /pantry/i }))
 
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/recipes/new')

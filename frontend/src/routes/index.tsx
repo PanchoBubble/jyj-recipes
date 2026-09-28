@@ -69,10 +69,11 @@ export const routes: RouteObject[] = [
             ],
           },
           {
-            path: 'stock',
+            path: 'pantry',
             element: <StockPage />,
-            handle: { title: 'Stock' } satisfies RouteHandle,
+            handle: { title: 'Pantry' } satisfies RouteHandle,
           },
+          { path: 'stock', element: <Navigate to="/pantry" replace /> },
           { path: 'chat', element: <ChatDeepLink /> },
           { path: 'chat/:id', element: <ChatDeepLink /> },
           {

@@ -58,7 +58,7 @@ TOOLS = (
         name="preview_shopping",
         description=(
             "What to buy for meals planned between two ISO dates (at most 31 days), after "
-            "stock and earlier planned meals. Nothing is saved."
+            "what is in the pantry and earlier planned meals. Nothing is saved."
         ),
         args_model=ShoppingRangeArgs,
         kind="read",

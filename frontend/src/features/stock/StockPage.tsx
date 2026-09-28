@@ -127,7 +127,7 @@ export function StockPage() {
         <ListSkeleton />
       ) : ingredients.isError ? (
         <EmptyState
-          title="Couldn't load stock"
+          title="Couldn't load the pantry"
           body={stockErrorMessage(ingredients.error)}
           action={
             <Button variant="outline" className="h-11" onClick={() => ingredients.refetch()}>
@@ -138,7 +138,7 @@ export function StockPage() {
       ) : all.length === 0 ? (
         <EmptyState
           title="No ingredients yet"
-          body="Add the things you keep in the kitchen to start tracking stock."
+          body="Add the things you keep in the kitchen to start your pantry."
           action={
             <Button className="h-11" onClick={() => setEditing({ ingredient: null })}>
               <Plus aria-hidden /> Add ingredient
@@ -202,7 +202,7 @@ export function StockPage() {
 
 function ListSkeleton() {
   return (
-    <div aria-label="Loading stock" role="status" className="flex flex-col gap-2">
+    <div aria-label="Loading pantry" role="status" className="flex flex-col gap-2">
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="flex items-center gap-3 rounded-xl border p-3">
           <div className="flex flex-1 flex-col gap-2">

@@ -126,7 +126,11 @@ describe('cookSummary', () => {
   it('lists what was used, shortfalls and untracked lines', () => {
     expect(cookSummary({ ...base, stock: [flourImpact, eggImpact], skipped: [saltSkipped] }, 'cook')).toEqual({
       title: 'Cooked Pancakes',
-      lines: ['Used 300 g flour', 'Short 200 g flour', 'Used 2 pieces eggs', 'Stock not changed for salt (to taste)'],
+      lines: ['Used from pantry: 300 g flour',
+        'Short 200 g flour',
+        'Used from pantry: 2 pieces eggs',
+        'Pantry not changed for salt (to taste)',
+      ],
       short: true,
     })
   })
@@ -135,7 +139,7 @@ describe('cookSummary', () => {
     const returned = { ...flourImpact, delta_base: '1500.000', shortfall_base: '0.000', display: { amount: '1.5', unit: 'kg' } }
     expect(cookSummary({ ...base, stock: [returned], skipped: [] }, 'uncook')).toEqual({
       title: 'Undid cooking Pancakes',
-      lines: ['Returned 1.5 kg flour'],
+      lines: ['Returned to pantry: 1.5 kg flour'],
       short: false,
     })
     expect(cookSummary({ ...base, changed: false, stock: [], skipped: [] }, 'cook').title).toBe(
@@ -163,10 +167,10 @@ describe('meal status actions', () => {
     expect(within(sheet).getByRole('button', { name: 'Remove from plan' })).toBeDisabled()
 
     expect(await screen.findByText('Cooked Pancakes')).toBeInTheDocument()
-    const changes = screen.getByRole('list', { name: 'Stock changes' })
-    expect(within(changes).getByText('Used 300 g flour')).toBeInTheDocument()
+    const changes = screen.getByRole('list', { name: 'Pantry changes' })
+    expect(within(changes).getByText('Used from pantry: 300 g flour')).toBeInTheDocument()
     expect(within(changes).getByText('Short 200 g flour')).toBeInTheDocument()
-    expect(within(changes).getByText('Stock not changed for salt (to taste)')).toBeInTheDocument()
+    expect(within(changes).getByText('Pantry not changed for salt (to taste)')).toBeInTheDocument()
 
     await waitFor(() => expect(within(sheet).getByRole('button', { name: 'Undo cooked' })).toBeEnabled())
     expect(requests).toContainEqual({ method: 'POST', path: '/planned-meals/1/cook' })
@@ -183,7 +187,7 @@ describe('meal status actions', () => {
     await user.click(within(sheet).getByRole('button', { name: 'Undo cooked' }))
 
     expect(await screen.findByText('Undid cooking Curry')).toBeInTheDocument()
-    expect(screen.getByText('Returned 300 g flour')).toBeInTheDocument()
+    expect(screen.getByText('Returned to pantry: 300 g flour')).toBeInTheDocument()
     expect(
       within(cell()).getByRole('button', { name: 'Curry, 2 servings, planned', hidden: true }),
     ).toBeInTheDocument()

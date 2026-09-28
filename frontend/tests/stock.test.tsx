@@ -87,10 +87,21 @@ function row(name: string) {
 
 beforeEach(() => server.use(meAs(alice)))
 
+describe('pantry route', () => {
+  it('redirects the old /stock link to /pantry', async () => {
+    serveIngredients([flour])
+    const { router } = renderApp('/stock')
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Pantry' })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/pantry')
+    expect(await screen.findByText('Flour')).toBeInTheDocument()
+  })
+})
+
 describe('stock list', () => {
   it('renders ingredients grouped by category with friendly amounts', async () => {
     serveIngredients([eggs, flour, milk])
-    renderApp('/stock')
+    renderApp('/pantry')
 
     expect(await screen.findByText('Flour')).toBeInTheDocument()
     const dairy = screen.getByRole('region', { name: 'Dairy' })
@@ -103,7 +114,7 @@ describe('stock list', () => {
 
   it('filters by search text and by category', async () => {
     serveIngredients([eggs, flour, milk])
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.type(await screen.findByLabelText('Search ingredients'), 'fl')
@@ -122,7 +133,7 @@ describe('stock list', () => {
 
   it('shows an empty state when there are no ingredients', async () => {
     serveIngredients([])
-    renderApp('/stock')
+    renderApp('/pantry')
     expect(await screen.findByText('No ingredients yet')).toBeInTheDocument()
   })
 })
@@ -140,7 +151,7 @@ describe('quick adjust', () => {
         return HttpResponse.json(stockOut(flour, '1600.000', { amount: '1.600', unit: 'kg' }))
       }),
     )
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: 'Add 100 g Flour' }))
@@ -162,7 +173,7 @@ describe('quick adjust', () => {
         return problem(422, 'Unprocessable Content', 'amount is too large')
       }),
     )
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: 'Remove 1 piece Eggs' }))
@@ -222,7 +233,7 @@ describe('stock detail', () => {
         return HttpResponse.json(stockOut(flour, '600.000', { amount: '600.000', unit: 'g' }))
       }),
     )
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /^Flour/ }))
@@ -237,12 +248,13 @@ describe('stock detail', () => {
       'cup',
     ])
 
-    expect(await within(drawer).findByText('Cooked')).toBeInTheDocument()
+    expect(await within(drawer).findByText('Used in cooking')).toBeInTheDocument()
     expect(within(drawer).getByText('-300 g')).toBeInTheDocument()
     expect(within(drawer).getByText('Short by 50 g')).toBeInTheDocument()
     expect(within(drawer).getByText('chat')).toBeInTheDocument()
     expect(within(drawer).getByText(/^You · Today/)).toBeInTheDocument()
     expect(within(drawer).getByText('+2 kg')).toBeInTheDocument()
+    expect(within(drawer).getByText('Bought, added to pantry')).toBeInTheDocument()
     expect(within(drawer).getByText(/^User 2 ·/)).toBeInTheDocument()
 
     const amount = within(drawer).getByLabelText('Set exact amount')
@@ -257,7 +269,7 @@ describe('stock detail', () => {
 
   it('rejects a malformed exact amount without calling the API', async () => {
     serveIngredients([eggs])
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /^Eggs/ }))
@@ -281,7 +293,7 @@ describe('ingredient management', () => {
         return HttpResponse.json(ingredient({ id: 9, name: 'Butter' }), { status: 201 })
       }),
     )
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: 'Add ingredient' }))
@@ -332,7 +344,7 @@ describe('ingredient management', () => {
         ),
       ),
     )
-    renderApp('/stock')
+    renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /^Flour/ }))
@@ -345,7 +357,7 @@ describe('ingredient management', () => {
     await user.click(within(form).getByRole('button', { name: 'Delete' }))
 
     expect(await within(form).findByRole('alert')).toHaveTextContent(
-      'ingredient is in use and cannot be deleted (used by stock history)',
+      'ingredient is in use and cannot be deleted (used by pantry history)',
     )
     expect(screen.getByRole('dialog', { name: 'Edit ingredient' })).toBeInTheDocument()
   })
@@ -369,7 +381,7 @@ describe('ingredient management', () => {
       ),
       http.get(`${API}/recipes/7`, () => problem(404, 'Not Found')),
     )
-    const { router } = renderApp('/stock')
+    const { router } = renderApp('/pantry')
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: /^Flour/ }))

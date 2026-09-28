@@ -37,7 +37,7 @@ export function ConversationList() {
           <p className="text-sm text-destructive">Could not load your chats.</p>
         ) : conversations.data.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No chats yet. Start one and ask the assistant to plan a meal, update stock or find a
+            No chats yet. Start one and ask the assistant to plan a meal, update the pantry or find a
             recipe.
           </p>
         ) : (

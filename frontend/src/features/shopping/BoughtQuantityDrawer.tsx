@@ -94,7 +94,7 @@ function BoughtForm({
         <DrawerDescription>
           {item.kind === 'buy'
             ? `List says ${formatDisplay(item.display)}. Enter what you actually bought.`
-            : 'Enter how much you bought to add it to stock.'}
+            : 'Enter how much you bought to add it to the pantry.'}
         </DrawerDescription>
       </DrawerHeader>
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-2 px-4 pb-4">

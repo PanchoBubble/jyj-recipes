@@ -16,8 +16,8 @@ interface ToolLabel {
 }
 
 const LABELS: Record<string, ToolLabel> = {
-  adjust_stock: { done: 'Adjusted stock', proposed: 'Adjust stock' },
-  set_stock: { done: 'Set stock level', proposed: 'Set stock level' },
+  adjust_stock: { done: 'Updated pantry', proposed: 'Update pantry' },
+  set_stock: { done: 'Set pantry amount', proposed: 'Set pantry amount' },
   create_ingredient: { done: 'Added ingredient', proposed: 'Add ingredient' },
   create_recipe: { done: 'Created recipe', proposed: 'Create recipe' },
   update_recipe: { done: 'Updated recipe', proposed: 'Update recipe' },
@@ -128,7 +128,7 @@ export function actionLink(action: ChatAction): ActionLink | null {
     if (tool === 'delete_recipe' && data?.outcome !== 'archived') return null
     return id === null ? null : { to: `/recipes/${id}`, label: 'Open recipe' }
   }
-  if (tool.endsWith('_stock')) return { to: '/stock', label: 'Open stock' }
+  if (tool.endsWith('_stock')) return { to: '/pantry', label: 'Open pantry' }
   if ((MEAL_TOOLS.has(tool) && tool !== 'remove_meal') || COOK_TOOLS.has(tool)) {
     const date = mealDate(data)
     return {

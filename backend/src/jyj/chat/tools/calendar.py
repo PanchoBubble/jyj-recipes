@@ -235,8 +235,8 @@ TOOLS = (
     Tool(
         name="mark_cooked",
         description=(
-            "Mark a meal cooked. This DEDUCTS its ingredients from stock; the result lists "
-            "every stock change, shortfalls and skipped lines. Tell the user what changed."
+            "Mark a meal cooked. This DEDUCTS its ingredients from the pantry; the result lists "
+            "every pantry change, shortfalls and skipped lines. Tell the user what changed."
         ),
         args_model=MealIdArgs,
         kind="write",
@@ -244,7 +244,10 @@ TOOLS = (
     ),
     Tool(
         name="uncook_meal",
-        description="Undo mark_cooked: the meal goes back to planned and its stock is returned.",
+        description=(
+            "Undo mark_cooked: the meal goes back to planned and its ingredients go back to "
+            "the pantry."
+        ),
         args_model=MealIdArgs,
         kind="write",
         handler=uncook_meal,

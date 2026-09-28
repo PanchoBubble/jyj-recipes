@@ -234,9 +234,9 @@ describe('shopping planner', () => {
     expect(within(dairy).getByText('Milk')).toBeInTheDocument()
     expect(within(dairy).getByText('1 l')).toBeInTheDocument()
     expect(
-      within(dairy).getByText('Need 1.5 l · In stock 500 ml (200 ml held for earlier meals)'),
+      within(dairy).getByText('Need 1.5 l · In pantry 500 ml (200 ml held for earlier meals)'),
     ).toBeInTheDocument()
-    expect(within(dairy).getByText('In stock')).toBeInTheDocument()
+    expect(within(dairy).getByText('In pantry')).toBeInTheDocument()
     const pantry = screen.getByRole('region', { name: 'Pantry' })
     expect(within(pantry).getByText('500 g')).toBeInTheDocument()
     expect(screen.getByText('2 items to buy')).toBeInTheDocument()
@@ -433,7 +433,7 @@ describe('shopping checklist', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Complete shopping' }))
     const dialog = await screen.findByRole('alertdialog')
-    const adding = within(dialog).getByRole('list', { name: 'Adding to stock' })
+    const adding = within(dialog).getByRole('list', { name: 'Adding to pantry' })
     expect(within(adding).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
       'Milk+2 l',
       'Flour+500 g',
@@ -441,7 +441,7 @@ describe('shopping checklist', () => {
     expect(within(dialog).getByText('1 unchecked item is not added.')).toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('button', { name: 'Complete' }))
-    expect(await screen.findByText('Added 2 items to stock')).toBeInTheDocument()
+    expect(await screen.findByText('Added 2 items to the pantry')).toBeInTheDocument()
     expect(completed).toBe(true)
     expect(queryClient.getQueryState(stockKeys.list())?.isInvalidated).toBe(true)
     expect(screen.getByText('Done')).toBeInTheDocument()

@@ -346,12 +346,12 @@ function CompleteShopping({ list, saving }: { list: ShoppingList; saving: boolea
           <AlertDialogTitle>Complete shopping?</AlertDialogTitle>
           <AlertDialogDescription>
             {adding.length === 0
-              ? 'Nothing will be added to stock. The list becomes read-only.'
-              : 'This adds the following to stock and makes the list read-only.'}
+              ? 'Nothing will be added to the pantry. The list becomes read-only.'
+              : 'This adds the following to the pantry and makes the list read-only.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {adding.length > 0 && (
-          <ul aria-label="Adding to stock" className="max-h-64 divide-y overflow-y-auto rounded-lg border text-sm">
+          <ul aria-label="Adding to pantry" className="max-h-64 divide-y overflow-y-auto rounded-lg border text-sm">
             {adding.map(({ item, quantity }) => (
               <li key={item.id} className="flex justify-between gap-2 px-3 py-2">
                 <span className="truncate">{item.ingredient_name}</span>
@@ -417,8 +417,8 @@ function DeleteList({ list }: { list: ShoppingList }) {
           <AlertDialogTitle>Delete this list?</AlertDialogTitle>
           <AlertDialogDescription>
             {list.status === 'done'
-              ? 'Stock already added from it stays as it is.'
-              : 'Nothing has been added to stock from it yet.'}
+              ? 'What it already added to the pantry stays there.'
+              : 'Nothing has been added to the pantry from it yet.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {remove.isError && (

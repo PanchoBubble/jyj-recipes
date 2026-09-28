@@ -203,7 +203,7 @@ function PreviewBody({
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           {toBuy.length === 0
-            ? 'Everything is in stock'
+            ? 'Everything is in the pantry'
             : `${toBuy.length} ${toBuy.length === 1 ? 'item' : 'items'} to buy`}
         </p>
         <Button className="h-11" disabled={create.isPending || stale} onClick={onSave}>
@@ -300,7 +300,7 @@ function PreviewRow({ item }: { item: PreviewItem }) {
         <span className="truncate font-medium">{item.ingredient_name}</span>
         {measured && (
           <span className="text-xs text-muted-foreground">
-            Need {formatBase(item.required_base, item.dimension)} · In stock{' '}
+            Need {formatBase(item.required_base, item.dimension)} · In pantry{' '}
             {formatBase(item.available_base, item.dimension)}
             {reserved && ` (${formatBase(item.reserved_base, item.dimension)} held for earlier meals)`}
           </span>
@@ -312,7 +312,7 @@ function PreviewRow({ item }: { item: PreviewItem }) {
         )}
       </div>
       {item.nothing_to_buy ? (
-        <Badge variant="secondary">{measured ? 'In stock' : 'Check'}</Badge>
+        <Badge variant="secondary">{measured ? 'In pantry' : 'Check'}</Badge>
       ) : (
         <span className="text-right text-sm font-semibold tabular-nums" data-testid="to-buy">
           {formatDisplay(item.display)}

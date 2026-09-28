@@ -18,7 +18,7 @@ class GetStockArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ingredient_ids: Annotated[list[Id], Field(max_length=IDS_MAX)] | None = Field(
-        default=None, description="Only these ingredients; null lists everything in stock."
+        default=None, description="Only these ingredients; null lists everything in the pantry."
     )
 
 
@@ -107,21 +107,26 @@ def set_stock(ctx: ToolContext, args: SetStockArgs) -> dict:
 TOOLS = (
     Tool(
         name="get_stock",
-        description="Current stock per ingredient (everything in stock, or the given ids).",
+        description=(
+            "What's in the pantry (also called stock, cupboard or fridge): the amount per "
+            "ingredient, for everything or the given ids."
+        ),
         args_model=GetStockArgs,
         kind="read",
         handler=get_stock,
     ),
     Tool(
         name="adjust_stock",
-        description="Add to or take from an ingredient's stock; never goes below zero.",
+        description="Add to or take from an ingredient's pantry amount; never goes below zero.",
         args_model=AdjustStockArgs,
         kind="write",
         handler=adjust_stock,
     ),
     Tool(
         name="set_stock",
-        description="Overwrite an ingredient's stock with an absolute amount (a correction).",
+        description=(
+            "Overwrite an ingredient's pantry amount with an absolute amount (a correction)."
+        ),
         args_model=SetStockArgs,
         kind="write",
         handler=set_stock,

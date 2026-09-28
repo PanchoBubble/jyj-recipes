@@ -28,7 +28,7 @@ const loadersByPath: [RegExp, Loader][] = [
   [/^\/recipes\/[^/]+\/?$/, pageLoaders.recipeDetail],
   [/^\/shopping\/?$/, pageLoaders.shopping],
   [/^\/shopping\/lists\/[^/]+\/?$/, pageLoaders.shoppingList],
-  [/^\/stock\/?$/, pageLoaders.stock],
+  [/^\/(pantry|stock)\/?$/, pageLoaders.stock],
   [/^\/settings\/?$/, pageLoaders.settings],
 ]
 

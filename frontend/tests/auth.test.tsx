@@ -63,10 +63,10 @@ describe('login', () => {
 
 describe('route guard', () => {
   it('redirects to login when me is 401', async () => {
-    const { router } = renderApp('/stock')
+    const { router } = renderApp('/pantry')
     await screen.findByLabelText('Username')
     expect(router.state.location.pathname).toBe('/login')
-    expect(router.state.location.search).toBe('?next=%2Fstock')
+    expect(router.state.location.search).toBe('?next=%2Fpantry')
   })
 
   it('redirects to login when any request returns 401 mid-session', async () => {

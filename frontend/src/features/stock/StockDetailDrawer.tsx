@@ -67,7 +67,7 @@ function DetailBody({
         <div className="min-w-0">
           <DrawerTitle className="truncate text-lg">{ingredient.name}</DrawerTitle>
           <DrawerDescription>
-            In stock: <span className="font-medium text-foreground">{formatQuantity(display.amount, display.unit)}</span>
+            In pantry: <span className="font-medium text-foreground">{formatQuantity(display.amount, display.unit)}</span>
           </DrawerDescription>
         </div>
         <Button
@@ -151,11 +151,16 @@ function SetExactForm({ ingredient }: { ingredient: Ingredient }) {
 }
 
 const REASONS: Record<StockReason, string> = {
-  manual: 'Adjusted',
-  cooked: 'Cooked',
-  purchased: 'Bought',
-  correction: 'Set',
-  undo: 'Undo',
+  manual: 'Added to pantry',
+  cooked: 'Used in cooking',
+  purchased: 'Bought, added to pantry',
+  correction: 'Pantry amount set',
+  undo: 'Undone',
+}
+
+function movementLabel(reason: StockReason, delta: bigint) {
+  if (reason === 'manual' && delta < 0n) return 'Taken from pantry'
+  return REASONS[reason]
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
@@ -227,7 +232,7 @@ function MovementRow({
     <li className="flex items-center gap-3 px-3 py-2">
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="flex items-center gap-2 text-sm font-medium">
-          {REASONS[movement.reason]}
+          {movementLabel(movement.reason, delta)}
           <Badge variant="secondary">{movement.source === 'chat' ? 'chat' : 'app'}</Badge>
         </span>
         <span className="truncate text-xs text-muted-foreground">

@@ -63,7 +63,7 @@ def create_ingredient(ctx: ToolContext, args: CreateIngredientArgs) -> dict:
 TOOLS = (
     Tool(
         name="list_ingredients",
-        description="Ingredients with ids, dimension, default unit and current stock.",
+        description="Ingredients with ids, dimension, default unit and current pantry amount.",
         args_model=ListIngredientsArgs,
         kind="read",
         handler=list_ingredients,
