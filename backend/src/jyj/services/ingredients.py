@@ -9,7 +9,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from jyj.models import Ingredient, StockItem, StockMovement, StockSource, User
+from jyj.models import Ingredient, RecipeIngredient, StockItem, StockMovement, StockSource, User
 from jyj.services.errors import ConflictError, InvalidError, NotFoundError
 from jyj.units import UNITS, Dimension, UnknownUnitError, base_unit, get_unit
 
@@ -33,10 +33,15 @@ def _has_stock_movements(db: Session, ingredient_id: int) -> bool:
     return bool(db.scalar(select(exists().where(StockMovement.ingredient_id == ingredient_id))))
 
 
+def _used_by_recipes(db: Session, ingredient_id: int) -> bool:
+    return bool(db.scalar(select(exists().where(RecipeIngredient.ingredient_id == ingredient_id))))
+
+
 # Register a check per table that points at ingredients (e.g. recipe lines) so deletes and
 # dimension changes are refused while anything still depends on the ingredient.
 REFERENCE_CHECKS: dict[str, ReferenceCheck] = {
     "stock_movements": _has_stock_movements,
+    "recipe_ingredients": _used_by_recipes,
 }
 
 
