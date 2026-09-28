@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 
+import { mealSlotKeys, plannedMealKeys } from '@/features/calendar/api'
 import type { Recipe } from '@/features/recipes/api'
 
 import { renderApp } from './render'
@@ -149,7 +150,9 @@ describe('recipe photo', () => {
   it('previews a picked file, then uploads it as multipart with the CSRF header', async () => {
     serve(recipe())
     const { queryClient } = renderApp('/recipes/7')
-    queryClient.setQueryData(['planned-meals', { from: '2026-09-28' }], [])
+    const week = plannedMealKeys.range('2026-09-28', '2026-10-04')
+    queryClient.setQueryData(week, [])
+    queryClient.setQueryData(mealSlotKeys.all, [])
     const user = userEvent.setup()
 
     expect(await screen.findByRole('img', { name: 'Pancakes (no photo)' })).toBeInTheDocument()
@@ -180,13 +183,16 @@ describe('recipe photo', () => {
     expect(await screen.findByRole('img', { name: 'Pancakes' })).toHaveAttribute('src', '/media/recipes/7.webp')
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Replace photo' })).toBeInTheDocument()
-    expect(queryClient.getQueryState(['planned-meals', { from: '2026-09-28' }])?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(week)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(mealSlotKeys.all)?.isInvalidated).toBe(false)
   })
 
   it('removes the photo after confirming', async () => {
     serve(withPhoto)
     const calls = servePhotoDelete(() => HttpResponse.json(recipe()))
-    renderApp('/recipes/7')
+    const { queryClient } = renderApp('/recipes/7')
+    const week = plannedMealKeys.range('2026-09-28', '2026-10-04')
+    queryClient.setQueryData(week, [])
     const user = userEvent.setup()
 
     expect(await screen.findByRole('img', { name: 'Pancakes' })).toBeInTheDocument()
@@ -199,6 +205,7 @@ describe('recipe photo', () => {
     expect(screen.getByRole('img', { name: 'Pancakes (no photo)' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Remove photo' })).not.toBeInTheDocument()
     expect(calls).toEqual([{ csrf: 'jyj' }])
+    expect(queryClient.getQueryState(week)?.isInvalidated).toBe(true)
   })
 
   it('shows the problem detail when the upload is too large and keeps the preview', async () => {

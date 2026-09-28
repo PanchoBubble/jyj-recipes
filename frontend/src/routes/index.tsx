@@ -3,16 +3,19 @@ import { Navigate, type RouteObject } from 'react-router'
 import { AppLayout, type RouteHandle } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
-import { CalendarPage } from '@/features/calendar/CalendarPage'
-import { ChatPage } from '@/features/chat/ChatPage'
-import { ConversationPage } from '@/features/chat/ConversationPage'
-import { RecipeDetailPage } from '@/features/recipes/RecipeDetailPage'
-import { RecipeEditorPage } from '@/features/recipes/RecipeEditorPage'
-import { RecipesPage } from '@/features/recipes/RecipesPage'
-import { ShoppingListPage } from '@/features/shopping/ShoppingListPage'
-import { ShoppingPage } from '@/features/shopping/ShoppingPage'
-import { StockPage } from '@/features/stock/StockPage'
-import { SettingsPage } from '@/routes/SettingsPage'
+import {
+  CalendarPage,
+  ChatPage,
+  ConversationPage,
+  RecipeDetailPage,
+  RecipeEditorPage,
+  RecipesPage,
+  RoutePrefetch,
+  SettingsPage,
+  ShoppingListPage,
+  ShoppingPage,
+  StockPage,
+} from '@/routes/pages'
 
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -20,7 +23,11 @@ export const routes: RouteObject[] = [
     element: <RequireAuth />,
     children: [
       {
-        element: <AppLayout />,
+        element: (
+          <RoutePrefetch>
+            <AppLayout />
+          </RoutePrefetch>
+        ),
         children: [
           { index: true, element: <Navigate to="/calendar" replace /> },
           {

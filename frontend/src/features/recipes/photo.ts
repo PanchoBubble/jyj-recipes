@@ -1,14 +1,12 @@
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
+import { plannedMealKeys } from '@/features/calendar/api'
 import { recipeKeys, type Recipe } from '@/features/recipes/api'
 import { API_BASE, ApiError, api, type Problem } from '@/lib/api'
 
 export const PHOTO_MAX_BYTES = 10 * 1024 * 1024
 export const DOWNSCALE_LONG_EDGE = 2000
 const DOWNSCALE_MIN_BYTES = 1.5 * 1024 * 1024
-
-// Planned meals embed the recipe photo urls; the calendar feature owns the rest of the key.
-export const plannedMealsKeyRoot = ['planned-meals'] as const
 
 function isHeic(file: File) {
   return /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
@@ -126,7 +124,8 @@ function afterPhotoChange(queryClient: QueryClient, saved: Recipe) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: recipeKeys.lists() }),
     queryClient.invalidateQueries({ queryKey: recipeKeys.detail(saved.id), refetchType: 'none' }),
-    queryClient.invalidateQueries({ queryKey: plannedMealsKeyRoot }),
+    // Planned meals embed the recipe photo urls.
+    queryClient.invalidateQueries({ queryKey: plannedMealKeys.all }),
   ])
 }
 

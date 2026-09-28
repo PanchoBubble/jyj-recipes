@@ -43,7 +43,7 @@ describe('app layout', () => {
 
     await user.click(screen.getByRole('link', { name: 'Settings' }))
     expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument()
-    expect(screen.getByText('Alice')).toBeInTheDocument()
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
   })
 
   it('persists the theme choice and toggles the dark class', async () => {
