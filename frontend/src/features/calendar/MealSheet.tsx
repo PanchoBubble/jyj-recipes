@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 
 import { Button } from '@/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import {
   Drawer,
   DrawerContent,
@@ -14,7 +15,7 @@ import { SERVINGS_MAX } from '@/features/recipes/api'
 import { RecipePhoto } from '@/features/recipes/RecipePhoto'
 import { useDebouncedValue } from '@/features/recipes/useDebouncedValue'
 
-import { useDeletePlannedMeal, useUpdatePlannedMeal } from './api'
+import { useDeletePlannedMeal, useMealSlots, useUpdatePlannedMeal } from './api'
 import { formatLongDay } from './dates'
 import { MealStatusActions } from './MealStatusActions'
 import type { PlannedMeal } from './plan'
@@ -53,13 +54,15 @@ function SheetBody({ meal, onClose }: { meal: PlannedMeal; onClose: () => void }
         <div className="min-w-0">
           <DrawerTitle className="truncate text-lg">{meal.recipe.name}</DrawerTitle>
           <DrawerDescription>
-            {formatLongDay(meal.date)} · {meal.slot.name}
+            {formatLongDay(meal.date)}
+            {meal.slot && ` · ${meal.slot.name}`}
           </DrawerDescription>
         </div>
       </DrawerHeader>
 
       <div className="flex flex-col gap-5 px-4 pb-4">
         <ServingsStepper meal={meal} />
+        <LabelSelect meal={meal} />
         <MealStatusActions meal={meal} />
 
         <div className="flex flex-col gap-2">
@@ -148,6 +151,39 @@ function ServingsStepper({ meal }: { meal: PlannedMeal }) {
       {cooked && (
         <p className="text-sm text-muted-foreground">Uncook first to change servings.</p>
       )}
+    </div>
+  )
+}
+
+/** Optional lunch/dinner/... tag; the meal keeps its place in the day either way. */
+function LabelSelect({ meal }: { meal: PlannedMeal }) {
+  const slots = useMealSlots()
+  const { mutate } = useUpdatePlannedMeal()
+  // A retired label stays selectable on the meal that still carries it.
+  const options = (slots.data ?? []).filter((s) => s.active || s.id === meal.slot_id)
+  if (meal.slot && !options.some((s) => s.id === meal.slot_id)) options.push(meal.slot)
+
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <label htmlFor="meal-label" className="text-sm font-medium">
+        Label
+      </label>
+      <NativeSelect
+        id="meal-label"
+        className="w-40"
+        value={meal.slot_id === null ? '' : String(meal.slot_id)}
+        onChange={(e) => {
+          const slot = options.find((s) => String(s.id) === e.target.value) ?? null
+          mutate({ meal, changes: { slot_id: slot?.id ?? null }, slot })
+        }}
+      >
+        <NativeSelectOption value="">None</NativeSelectOption>
+        {options.map((s) => (
+          <NativeSelectOption key={s.id} value={String(s.id)}>
+            {s.name}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
     </div>
   )
 }

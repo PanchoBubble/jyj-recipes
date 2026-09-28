@@ -23,7 +23,7 @@ export interface PlannedRecipe {
 export interface PlannedMeal {
   id: number
   date: IsoDate
-  slot_id: number
+  slot_id: number | null
   recipe_id: number
   servings: number
   position: number
@@ -34,75 +34,72 @@ export interface PlannedMeal {
   created_at: string
   updated_at: string
   recipe: PlannedRecipe
-  slot: MealSlot
-}
-
-export interface Cell {
-  date: IsoDate
-  slotId: number
-}
-
-export function sameCell(meal: Pick<PlannedMeal, 'date' | 'slot_id'>, cell: Cell) {
-  return meal.date === cell.date && meal.slot_id === cell.slotId
+  /** Optional label (lunch, dinner, ...); meals are ordered per day regardless of it. */
+  slot: MealSlot | null
 }
 
 function byPosition(a: PlannedMeal, b: PlannedMeal) {
   return a.position - b.position || a.id - b.id
 }
 
-/** Meals of one cell in display order, matching the server's (position, id) ordering. */
-export function cellMeals(meals: readonly PlannedMeal[], cell: Cell): PlannedMeal[] {
-  return meals.filter((m) => sameCell(m, cell)).sort(byPosition)
+/** Meals of one day in display order, matching the server's (position, id) ordering. */
+export function dayMeals(meals: readonly PlannedMeal[], date: IsoDate): PlannedMeal[] {
+  return meals.filter((m) => m.date === date).sort(byPosition)
 }
 
 function renumber(meals: PlannedMeal[]): PlannedMeal[] {
   return meals.map((m, position) => (m.position === position ? m : { ...m, position }))
 }
 
-function replaceCells(
+function replaceDays(
   meals: readonly PlannedMeal[],
-  cells: Cell[],
+  dates: IsoDate[],
   next: PlannedMeal[],
 ): PlannedMeal[] {
-  const untouched = meals.filter((m) => !cells.some((c) => sameCell(m, c)))
-  return [...untouched, ...next]
+  return [...meals.filter((m) => !dates.includes(m.date)), ...next]
 }
 
-/** Mirrors the server: the meal leaves its cell and is inserted at `position` in the target. */
+function insertAt(list: PlannedMeal[], meal: PlannedMeal, position: number | undefined) {
+  list.splice(Math.min(position ?? list.length, list.length), 0, meal)
+  return list
+}
+
+/** Mirrors the server: the meal leaves its day and is inserted at `position` in the target day. */
 export function applyMove(
   meals: readonly PlannedMeal[],
   id: number,
-  target: Cell,
+  date: IsoDate,
   position: number | undefined,
-  slot?: MealSlot,
 ): PlannedMeal[] {
   const meal = meals.find((m) => m.id === id)
   if (!meal) return [...meals]
-  const source: Cell = { date: meal.date, slotId: meal.slot_id }
-  const moved: PlannedMeal = {
-    ...meal,
-    date: target.date,
-    slot_id: target.slotId,
-    slot: slot ?? meal.slot,
-  }
-  const targetList = cellMeals(meals, target).filter((m) => m.id !== id)
-  const index = Math.min(position ?? targetList.length, targetList.length)
-  targetList.splice(index, 0, moved)
-  if (sameCell(meal, target)) return replaceCells(meals, [target], renumber(targetList))
-  const sourceList = cellMeals(meals, source).filter((m) => m.id !== id)
-  return replaceCells(meals, [source, target], [...renumber(sourceList), ...renumber(targetList)])
+  const target = insertAt(
+    dayMeals(meals, date).filter((m) => m.id !== id),
+    { ...meal, date },
+    position,
+  )
+  if (meal.date === date) return replaceDays(meals, [date], renumber(target))
+  const source = dayMeals(meals, meal.date).filter((m) => m.id !== id)
+  return replaceDays(meals, [meal.date, date], [...renumber(source), ...renumber(target)])
 }
 
-export function applyAppend(meals: readonly PlannedMeal[], meal: PlannedMeal): PlannedMeal[] {
-  const cell = { date: meal.date, slotId: meal.slot_id }
-  return [...meals, { ...meal, position: cellMeals(meals, cell).length }]
+/** A new meal at `position` in its day, or at the end when none is given. */
+export function applyInsert(
+  meals: readonly PlannedMeal[],
+  meal: PlannedMeal,
+  position?: number,
+): PlannedMeal[] {
+  return replaceDays(meals, [meal.date], renumber(insertAt(dayMeals(meals, meal.date), meal, position)))
 }
 
 export function applyRemove(meals: readonly PlannedMeal[], id: number): PlannedMeal[] {
   const meal = meals.find((m) => m.id === id)
   if (!meal) return [...meals]
-  const cell = { date: meal.date, slotId: meal.slot_id }
-  return replaceCells(meals, [cell], renumber(cellMeals(meals, cell).filter((m) => m.id !== id)))
+  return replaceDays(
+    meals,
+    [meal.date],
+    renumber(dayMeals(meals, meal.date).filter((m) => m.id !== id)),
+  )
 }
 
 export function applyReplace(
@@ -126,15 +123,14 @@ export function isPending(meal: Pick<PlannedMeal, 'id'>) {
 
 export function draftMeal(
   recipe: Pick<RecipeSummary, 'id' | 'name' | 'photo_url' | 'photo_thumb_url' | 'default_servings'>,
-  cell: Cell,
-  slot: MealSlot,
+  date: IsoDate,
   servings: number,
 ): PlannedMeal {
   const now = new Date().toISOString()
   return {
     id: nextTempId(),
-    date: cell.date,
-    slot_id: cell.slotId,
+    date,
+    slot_id: null,
     recipe_id: recipe.id,
     servings,
     position: 0,
@@ -152,7 +148,7 @@ export function draftMeal(
       default_servings: recipe.default_servings,
       archived_at: null,
     },
-    slot,
+    slot: null,
   }
 }
 
@@ -165,22 +161,22 @@ export type TrayRecipe = Pick<
 
 export type DragData =
   | { type: 'recipe'; recipe: TrayRecipe }
-  | { type: 'meal'; meal: PlannedMeal; disabled?: boolean }
+  | { type: 'meal'; meal: PlannedMeal }
 
 export type DropData =
-  | { type: 'cell'; cell: Cell; disabled?: boolean }
-  | { type: 'meal'; meal: PlannedMeal; disabled?: boolean }
+  | { type: 'day'; date: IsoDate }
+  | { type: 'meal'; meal: PlannedMeal }
   | { type: 'tray' }
 
 export type DropAction =
-  | { kind: 'create'; cell: Cell; recipe: TrayRecipe; servings: number }
-  | { kind: 'move'; id: number; cell: Cell; position: number }
-  | { kind: 'reorder'; id: number; cell: Cell; position: number }
+  | { kind: 'create'; date: IsoDate; position: number; recipe: TrayRecipe; servings: number }
+  | { kind: 'move'; id: number; date: IsoDate; position: number }
+  | { kind: 'reorder'; id: number; date: IsoDate; position: number }
 
 export const dndId = {
   recipe: (id: number) => `recipe:${id}`,
   meal: (id: number) => `meal:${id}`,
-  cell: (cell: Cell) => `cell:${cell.date}:${cell.slotId}`,
+  day: (date: IsoDate) => `day:${date}`,
   tray: 'tray',
 }
 
@@ -190,27 +186,31 @@ export function resolveDragEnd(
   over: DropData | undefined,
   meals: readonly PlannedMeal[],
 ): DropAction | null {
-  if (!active || !over || over.type === 'tray' || over.disabled) return null
+  if (!active || !over || over.type === 'tray') return null
 
-  const cell: Cell =
-    over.type === 'cell' ? over.cell : { date: over.meal.date, slotId: over.meal.slot_id }
-  const list = cellMeals(meals, cell)
+  const date = over.type === 'day' ? over.date : over.meal.date
+  const list = dayMeals(meals, date)
 
   if (active.type === 'recipe') {
-    return { kind: 'create', cell, recipe: active.recipe, servings: active.recipe.default_servings }
+    const at = over.type === 'meal' ? list.findIndex((m) => m.id === over.meal.id) : -1
+    return {
+      kind: 'create',
+      date,
+      position: at < 0 ? list.length : at,
+      recipe: active.recipe,
+      servings: active.recipe.default_servings,
+    }
   }
 
   const meal = active.meal
-  if (sameCell(meal, cell)) {
+  if (meal.date === date) {
     const from = list.findIndex((m) => m.id === meal.id)
-    const to =
-      over.type === 'meal' ? list.findIndex((m) => m.id === over.meal.id) : list.length - 1
+    const to = over.type === 'meal' ? list.findIndex((m) => m.id === over.meal.id) : list.length - 1
     if (from < 0 || to < 0 || from === to) return null
-    return { kind: 'reorder', id: meal.id, cell, position: to }
+    return { kind: 'reorder', id: meal.id, date, position: to }
   }
 
   const others = list.filter((m) => m.id !== meal.id)
-  const position =
-    over.type === 'meal' ? Math.max(0, others.findIndex((m) => m.id === over.meal.id)) : others.length
-  return { kind: 'move', id: meal.id, cell, position }
+  const at = over.type === 'meal' ? others.findIndex((m) => m.id === over.meal.id) : -1
+  return { kind: 'move', id: meal.id, date, position: at < 0 ? others.length : at }
 }

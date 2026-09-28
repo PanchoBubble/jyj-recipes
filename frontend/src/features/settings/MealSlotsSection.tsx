@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { mealErrorMessage, useMealSlots } from '@/features/calendar/api'
 import { useCalendarSensors } from '@/features/calendar/dnd'
 import type { MealSlot } from '@/features/calendar/plan'
-import { DragHandle } from '@/features/calendar/SlotCell'
+import { DragHandle } from '@/features/calendar/DragHandle'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 

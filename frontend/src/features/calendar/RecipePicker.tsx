@@ -16,12 +16,14 @@ import { RecipePhoto } from '@/features/recipes/RecipePhoto'
 import { useDebouncedValue } from '@/features/recipes/useDebouncedValue'
 
 import { formatLongDay } from './dates'
-import type { Cell, MealSlot, TrayRecipe } from './plan'
+import type { IsoDate } from './dates'
+import type { TrayRecipe } from './plan'
 
 interface RecipePickerProps {
-  target: { cell: Cell; slot: MealSlot } | null
+  /** The day to add to. */
+  target: IsoDate | null
   onOpenChange: (open: boolean) => void
-  onPick: (cell: Cell, slot: MealSlot, recipe: TrayRecipe) => void
+  onPick: (date: IsoDate, recipe: TrayRecipe) => void
 }
 
 /** Tap-to-add: the no-drag way to plan a meal. */
@@ -34,11 +36,10 @@ export function RecipePicker({ target, onOpenChange, onPick }: RecipePickerProps
       <DrawerContent className="data-[vaul-drawer-direction=bottom]:h-[80svh]">
         {shown && (
           <PickerBody
-            key={`${shown.cell.date}:${shown.cell.slotId}`}
-            cell={shown.cell}
-            slot={shown.slot}
+            key={shown}
+            date={shown}
             onPick={(recipe) => {
-              onPick(shown.cell, shown.slot, recipe)
+              onPick(shown, recipe)
               onOpenChange(false)
             }}
           />
@@ -49,12 +50,10 @@ export function RecipePicker({ target, onOpenChange, onPick }: RecipePickerProps
 }
 
 function PickerBody({
-  cell,
-  slot,
+  date,
   onPick,
 }: {
-  cell: Cell
-  slot: MealSlot
+  date: IsoDate
   onPick: (recipe: TrayRecipe) => void
 }) {
   const [query, setQuery] = useState('')
@@ -65,8 +64,8 @@ function PickerBody({
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-[env(safe-area-inset-bottom)]">
       <DrawerHeader className="text-left group-data-[vaul-drawer-direction=bottom]/drawer-content:text-left">
-        <DrawerTitle className="text-lg">Add to {slot.name}</DrawerTitle>
-        <DrawerDescription>{formatLongDay(cell.date)}</DrawerDescription>
+        <DrawerTitle className="text-lg">Add to {formatLongDay(date)}</DrawerTitle>
+        <DrawerDescription>Pick a recipe for this day.</DrawerDescription>
       </DrawerHeader>
       <div className="relative px-4 pb-2">
         <Search

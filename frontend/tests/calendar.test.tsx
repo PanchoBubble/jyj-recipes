@@ -10,7 +10,7 @@ import { addDays, formatLongDay, startOfWeek, todayIso } from '@/features/calend
 import { useDropAction } from '@/features/calendar/dnd'
 import {
   applyMove,
-  cellMeals,
+  dayMeals,
   resolveDragEnd,
   type DragData,
   type DropData,
@@ -45,14 +45,13 @@ function meal(
   id: number,
   r: TrayRecipe,
   date: string,
-  slot: MealSlot,
   position: number,
   overrides: Partial<PlannedMeal> = {},
 ): PlannedMeal {
   return {
     id,
     date,
-    slot_id: slot.id,
+    slot_id: null,
     recipe_id: r.id,
     servings: r.default_servings,
     position,
@@ -63,99 +62,103 @@ function meal(
     created_at: '2026-09-20T10:00:00Z',
     updated_at: '2026-09-20T10:00:00Z',
     recipe: { ...r, archived_at: null },
-    slot,
+    slot: null,
     ...overrides,
   }
 }
 
+const labelled = (slot: MealSlot) => ({ slot_id: slot.id, slot })
+
 const week = (): PlannedMeal[] => [
-  meal(11, pancakes, MON, lunch, 0),
-  meal(12, soup, MON, lunch, 1),
-  meal(13, curry, TUE, dinner, 0, { status: 'cooked', cooked_at: '2026-09-29T19:00:00Z' }),
+  meal(11, pancakes, MON, 0, labelled(lunch)),
+  meal(12, soup, MON, 1),
+  meal(13, curry, TUE, 0, { status: 'cooked', cooked_at: '2026-09-29T19:00:00Z' }),
 ]
 
 const recipeData = (r: TrayRecipe): DragData => ({ type: 'recipe', recipe: r })
 const mealData = (m: PlannedMeal): DragData => ({ type: 'meal', meal: m })
-const cellDrop = (date: string, slotId: number, disabled = false): DropData => ({
-  type: 'cell',
-  cell: { date, slotId },
-  disabled,
-})
+const dayDrop = (date: string): DropData => ({ type: 'day', date })
 const mealDrop = (m: PlannedMeal): DropData => ({ type: 'meal', meal: m })
+const ids = (meals: PlannedMeal[], date: string) => dayMeals(meals, date).map((m) => m.id)
 
 describe('resolveDragEnd', () => {
   const meals = week()
   const [m11, m12, m13] = meals
 
-  it('creates a planned meal with the recipe default servings when a recipe lands on a cell', () => {
-    expect(resolveDragEnd(recipeData(soup), cellDrop(TUE, lunch.id), meals)).toEqual({
+  it('appends a recipe dropped on a day, with its default servings', () => {
+    expect(resolveDragEnd(recipeData(soup), dayDrop(MON), meals)).toEqual({
       kind: 'create',
-      cell: { date: TUE, slotId: lunch.id },
+      date: MON,
+      position: 2,
       recipe: soup,
       servings: 4,
     })
   })
 
-  it("uses a meal card's cell when a recipe lands on the card", () => {
-    expect(resolveDragEnd(recipeData(pancakes), mealDrop(m13), meals)).toMatchObject({
+  it('inserts a recipe in front of the card it lands on', () => {
+    expect(resolveDragEnd(recipeData(pancakes), mealDrop(m12), meals)).toMatchObject({
       kind: 'create',
-      cell: { date: TUE, slotId: dinner.id },
-    })
-  })
-
-  it('ignores drops on the tray, on disabled cells and on nothing', () => {
-    expect(resolveDragEnd(recipeData(pancakes), { type: 'tray' }, meals)).toBeNull()
-    expect(resolveDragEnd(recipeData(pancakes), cellDrop(MON, tea.id, true), meals)).toBeNull()
-    expect(resolveDragEnd(mealData(m11), undefined, meals)).toBeNull()
-    expect(resolveDragEnd(undefined, cellDrop(MON, lunch.id), meals)).toBeNull()
-  })
-
-  it('moves a meal to the end of another cell', () => {
-    expect(resolveDragEnd(mealData(m11), cellDrop(TUE, dinner.id), meals)).toEqual({
-      kind: 'move',
-      id: 11,
-      cell: { date: TUE, slotId: dinner.id },
+      date: MON,
       position: 1,
     })
   })
 
-  it('moves a meal in front of the card it lands on', () => {
+  it('ignores drops on the recipe panel and on nothing', () => {
+    expect(resolveDragEnd(recipeData(pancakes), { type: 'tray' }, meals)).toBeNull()
+    expect(resolveDragEnd(mealData(m11), { type: 'tray' }, meals)).toBeNull()
+    expect(resolveDragEnd(mealData(m11), undefined, meals)).toBeNull()
+    expect(resolveDragEnd(undefined, dayDrop(MON), meals)).toBeNull()
+  })
+
+  it('moves a meal to the end of another day', () => {
+    expect(resolveDragEnd(mealData(m11), dayDrop(TUE), meals)).toEqual({
+      kind: 'move',
+      id: 11,
+      date: TUE,
+      position: 1,
+    })
+  })
+
+  it('moves a meal in front of the card it lands on in another day', () => {
     expect(resolveDragEnd(mealData(m12), mealDrop(m13), meals)).toEqual({
       kind: 'move',
       id: 12,
-      cell: { date: TUE, slotId: dinner.id },
+      date: TUE,
       position: 0,
     })
   })
 
-  it('reorders within a cell to the index of the card it lands on', () => {
+  it('reorders within a day to the index of the card it lands on', () => {
     expect(resolveDragEnd(mealData(m11), mealDrop(m12), meals)).toEqual({
       kind: 'reorder',
       id: 11,
-      cell: { date: MON, slotId: lunch.id },
+      date: MON,
       position: 1,
     })
-    expect(resolveDragEnd(mealData(m12), cellDrop(MON, lunch.id), meals)).toBeNull()
+    expect(resolveDragEnd(mealData(m11), dayDrop(MON), meals)).toEqual({
+      kind: 'reorder',
+      id: 11,
+      date: MON,
+      position: 1,
+    })
+    expect(resolveDragEnd(mealData(m12), dayDrop(MON), meals)).toBeNull()
     expect(resolveDragEnd(mealData(m11), mealDrop(m11), meals)).toBeNull()
   })
 })
 
 describe('applyMove', () => {
-  it('renumbers both cells like the server does', () => {
-    const next = applyMove(week(), 11, { date: TUE, slotId: dinner.id }, 0, dinner)
-    expect(cellMeals(next, { date: MON, slotId: lunch.id }).map((m) => [m.id, m.position])).toEqual([
-      [12, 0],
-    ])
-    expect(cellMeals(next, { date: TUE, slotId: dinner.id }).map((m) => [m.id, m.position])).toEqual([
+  it('renumbers both days like the server does, keeping the label', () => {
+    const next = applyMove(week(), 11, TUE, 0)
+    expect(dayMeals(next, MON).map((m) => [m.id, m.position])).toEqual([[12, 0]])
+    expect(dayMeals(next, TUE).map((m) => [m.id, m.position])).toEqual([
       [11, 0],
       [13, 1],
     ])
-    expect(next.find((m) => m.id === 11)?.slot).toBe(dinner)
+    expect(next.find((m) => m.id === 11)?.slot).toBe(lunch)
   })
 
   it('clamps past-the-end positions to an append', () => {
-    const next = applyMove(week(), 11, { date: MON, slotId: lunch.id }, 99)
-    expect(cellMeals(next, { date: MON, slotId: lunch.id }).map((m) => m.id)).toEqual([12, 11])
+    expect(ids(applyMove(week(), 11, MON, 99), MON)).toEqual([12, 11])
   })
 })
 
@@ -168,7 +171,7 @@ describe('drop handler', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     )
-    const { result } = renderHook(() => useDropAction(slots), { wrapper })
+    const { result } = renderHook(() => useDropAction(), { wrapper })
     const onDragEnd = (active: DragData, over: DropData) => {
       const meals = queryClient.getQueryData<PlannedMeal[]>(rangeKey) ?? []
       const action = resolveDragEnd(active, over, meals)
@@ -178,7 +181,7 @@ describe('drop handler', () => {
     return { queryClient, onDragEnd, cached }
   }
 
-  it('POSTs the recipe into the target cell and shows it right away', async () => {
+  it('POSTs the recipe at the drop index with no label and shows it right away', async () => {
     let body: unknown
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
@@ -186,58 +189,68 @@ describe('drop handler', () => {
       http.post(`${API}/planned-meals`, async ({ request }) => {
         body = await request.json()
         await gate
-        return HttpResponse.json(meal(20, pancakes, TUE, lunch, 0), { status: 201 })
+        return HttpResponse.json(meal(20, curry, MON, 1), { status: 201 })
       }),
     )
     const { onDragEnd, cached } = setup()
 
-    onDragEnd(recipeData(pancakes), cellDrop(TUE, lunch.id))
+    onDragEnd(recipeData(curry), mealDrop(week()[1]))
 
     await waitFor(() =>
-      expect(body).toEqual({ date: TUE, slot_id: lunch.id, recipe_id: 7, servings: 2 }),
+      expect(body).toEqual({ date: MON, recipe_id: curry.id, servings: 3, position: 1 }),
     )
-    const draft = cellMeals(cached(), { date: TUE, slotId: lunch.id })
-    expect(draft).toHaveLength(1)
-    expect(draft[0].id).toBeLessThan(0)
-    expect(draft[0].recipe.name).toBe('Pancakes')
+    const day = dayMeals(cached(), MON)
+    expect(day.map((m) => m.recipe.name)).toEqual(['Pancakes', 'Curry', 'Soup'])
+    expect(day[1].id).toBeLessThan(0)
+    expect(day[1].slot).toBeNull()
     release()
   })
 
-  it('PATCHes date, slot and position for a move between cells', async () => {
+  it('POSTs at the end of an empty day', async () => {
+    let body: unknown
+    server.use(
+      http.post(`${API}/planned-meals`, async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(meal(21, soup, SUN, 0), { status: 201 })
+      }),
+    )
+    const { onDragEnd } = setup()
+
+    onDragEnd(recipeData(soup), dayDrop(SUN))
+
+    await waitFor(() => expect(body).toEqual({ date: SUN, recipe_id: soup.id, servings: 4, position: 0 }))
+  })
+
+  it('PATCHes date and position for a move across days', async () => {
     let body: unknown
     server.use(
       http.patch(`${API}/planned-meals/12`, async ({ request }) => {
         body = await request.json()
-        return HttpResponse.json(meal(12, soup, TUE, dinner, 0))
+        return HttpResponse.json(meal(12, soup, TUE, 0))
       }),
     )
     const { onDragEnd, cached } = setup()
-    const m12 = week()[1]
-    const m13 = week()[2]
+    const [, m12, m13] = week()
 
     onDragEnd(mealData(m12), mealDrop(m13))
 
-    await waitFor(() =>
-      expect(cellMeals(cached(), { date: TUE, slotId: dinner.id }).map((m) => m.id)).toEqual([12, 13]),
-    )
-    await waitFor(() => expect(body).toEqual({ date: TUE, slot_id: dinner.id, position: 0 }))
+    await waitFor(() => expect(ids(cached(), TUE)).toEqual([12, 13]))
+    await waitFor(() => expect(body).toEqual({ date: TUE, position: 0 }))
   })
 
-  it('PATCHes only the position for a reorder within a cell', async () => {
+  it('PATCHes only the position for a reorder within a day', async () => {
     let body: unknown
     server.use(
       http.patch(`${API}/planned-meals/11`, async ({ request }) => {
         body = await request.json()
-        return HttpResponse.json(meal(11, pancakes, MON, lunch, 1))
+        return HttpResponse.json(meal(11, pancakes, MON, 1, labelled(lunch)))
       }),
     )
     const { onDragEnd, cached } = setup()
 
     onDragEnd(mealData(week()[0]), mealDrop(week()[1]))
 
-    await waitFor(() =>
-      expect(cellMeals(cached(), { date: MON, slotId: lunch.id }).map((m) => m.id)).toEqual([12, 11]),
-    )
+    await waitFor(() => expect(ids(cached(), MON)).toEqual([12, 11]))
     await waitFor(() => expect(body).toEqual({ position: 1 }))
   })
 
@@ -248,21 +261,19 @@ describe('drop handler', () => {
     server.use(
       http.patch(`${API}/planned-meals/11`, async () => {
         await gate
-        return problem(422, 'Unprocessable', "meal slot 'Dinner' is inactive")
+        return problem(409, 'Conflict', 'meal is cooked')
       }),
     )
     const { onDragEnd, cached, queryClient } = setup()
     const before = cached()
 
-    onDragEnd(mealData(week()[0]), cellDrop(TUE, dinner.id))
-    await waitFor(() =>
-      expect(cellMeals(cached(), { date: TUE, slotId: dinner.id }).map((m) => m.id)).toEqual([13, 11]),
-    )
+    onDragEnd(mealData(week()[0]), dayDrop(TUE))
+    await waitFor(() => expect(ids(cached(), TUE)).toEqual([13, 11]))
     release()
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith("Couldn't update Pancakes", {
-        description: "meal slot 'Dinner' is inactive",
+        description: 'meal is cooked',
       }),
     )
     expect(cached()).toEqual(before)
@@ -292,6 +303,10 @@ function recipePage(items: TrayRecipe[]): RecipePage {
 function mockCalendarApi(initial = week()) {
   let meals = initial
   const requests: { method: string; path: string; body?: unknown }[] = []
+  const withSlot = (m: PlannedMeal): PlannedMeal => ({
+    ...m,
+    slot: m.slot_id === null ? null : (slots.find((s) => s.id === m.slot_id) ?? null),
+  })
   server.use(
     meAs(alice),
     http.get(`${API}/meal-slots`, () => HttpResponse.json(slots)),
@@ -304,18 +319,17 @@ function mockCalendarApi(initial = week()) {
     }),
     http.get(`${API}/recipes`, () => HttpResponse.json(recipePage([pancakes, soup, curry]))),
     http.post(`${API}/planned-meals`, async ({ request }) => {
-      const body = (await request.json()) as { date: string; slot_id: number; recipe_id: number; servings: number }
+      const body = (await request.json()) as { date: string; recipe_id: number; servings: number }
       requests.push({ method: 'POST', path: '/planned-meals', body })
       const r = [pancakes, soup, curry].find((x) => x.id === body.recipe_id)!
-      const slot = slots.find((s) => s.id === body.slot_id)!
-      const created = meal(100 + meals.length, r, body.date, slot, 99, { servings: body.servings })
+      const created = meal(100 + meals.length, r, body.date, 99, { servings: body.servings })
       meals = [...meals, created]
       return HttpResponse.json(created, { status: 201 })
     }),
     http.patch(`${API}/planned-meals/:id`, async ({ request, params }) => {
       const body = (await request.json()) as Partial<PlannedMeal>
       requests.push({ method: 'PATCH', path: `/planned-meals/${params.id}`, body })
-      meals = meals.map((m) => (m.id === Number(params.id) ? { ...m, ...body } : m))
+      meals = meals.map((m) => (m.id === Number(params.id) ? withSlot({ ...m, ...body }) : m))
       return HttpResponse.json(meals.find((m) => m.id === Number(params.id)))
     }),
     http.delete(`${API}/planned-meals/:id`, ({ params }) => {
@@ -327,38 +341,35 @@ function mockCalendarApi(initial = week()) {
   return requests
 }
 
-const cellLabel = (date: string, slot: MealSlot) => `${formatLongDay(date)}, ${slot.name}`
+const dayRegion = (date: string, hidden = false) =>
+  screen.getByRole('region', { name: formatLongDay(date), hidden })
 
 describe('calendar page', () => {
-  it('shows the week as days with active slot cells and their meals', async () => {
+  it('shows each day as one column of meals in position order, labels as tags', async () => {
     mockCalendarApi()
     renderApp(`/calendar?week=${MON}`)
 
-    const monLunch = await screen.findByRole('region', { name: cellLabel(MON, lunch) })
+    const monday = await screen.findByRole('region', { name: formatLongDay(MON) })
     expect(
-      within(monLunch)
+      within(monday)
         .getAllByRole('button', { name: /servings/ })
         .map((b) => b.getAttribute('aria-label')),
-    ).toEqual(['Pancakes, 2 servings, planned', 'Soup, 4 servings, planned'])
+    ).toEqual(['Pancakes, Lunch, 2 servings, planned', 'Soup, 4 servings, planned'])
+    expect(within(monday).getByText('Lunch')).toHaveAttribute('data-meal-label')
     expect(screen.getByRole('button', { name: 'Curry, 3 servings, cooked' })).toBeInTheDocument()
-    expect(screen.getAllByRole('region', { name: /, (Lunch|Dinner)$/ })).toHaveLength(14)
-    expect(screen.queryByRole('region', { name: /, Tea$/ })).not.toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /^Move / })).toHaveLength(3)
   })
 
-  it('lays the week out as slot rows across day columns, keyed by date and slot', async () => {
+  it('lays out seven day columns under a matching day strip, with no slot rows', async () => {
     mockCalendarApi()
     renderApp(`/calendar?week=${MON}`)
 
     const grid = await screen.findByTestId('week-grid')
     const days = Array.from({ length: 7 }, (_, i) => addDays(MON, i))
-    expect(Array.from(grid.querySelectorAll('[data-cell]'), (c) => c.getAttribute('data-cell'))).toEqual([
-      ...days.map((d) => `cell:${d}:${lunch.id}`),
-      ...days.map((d) => `cell:${d}:${dinner.id}`),
-    ])
     expect(
-      Array.from(grid.querySelectorAll('[data-slot-label]'), (l) => l.textContent),
-    ).toEqual(['Lunch', 'Dinner'])
+      Array.from(grid.querySelectorAll('[data-day-column]'), (c) => c.getAttribute('data-day-column')),
+    ).toEqual(days)
+    expect(grid.querySelector('[data-slot-label]')).toBeNull()
     expect(
       Array.from(screen.getByTestId('day-strip').querySelectorAll('[data-day]'), (d) =>
         d.getAttribute('data-day'),
@@ -366,15 +377,17 @@ describe('calendar page', () => {
     ).toEqual(days)
   })
 
-  it('keeps an inactive slot row while the week still has meals in it', async () => {
-    mockCalendarApi([...week(), meal(14, soup, TUE, tea, 0)])
+  it('docks a searchable recipe panel with draggable cards under the week', async () => {
+    mockCalendarApi()
     renderApp(`/calendar?week=${MON}`)
 
-    const tueTea = await screen.findByRole('region', { name: cellLabel(TUE, tea) })
-    expect(within(tueTea).getByRole('button', { name: /^Soup, / })).toBeInTheDocument()
-    expect(within(tueTea).queryByRole('button', { name: /^Add a recipe/ })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('region', { name: /, Tea$/ })).toHaveLength(7)
-    expect(screen.getByText('(inactive)')).toBeInTheDocument()
+    const panel = await screen.findByRole('complementary', { name: 'Recipes' })
+    expect(panel).toHaveAttribute('data-bottom-dock')
+    expect(within(panel).getByRole('searchbox', { name: 'Search recipes' })).toBeInTheDocument()
+    expect(
+      await within(panel).findAllByRole('button', { name: /^Drag .* onto the calendar$/ }),
+    ).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: 'Recipes' })).not.toBeInTheDocument()
   })
 
   it("highlights today's column and scrolls it into view", async () => {
@@ -397,10 +410,10 @@ describe('calendar page', () => {
     const requests = mockCalendarApi()
     const user = userEvent.setup()
     const { router } = renderApp(`/calendar?week=${MON}`)
-    await screen.findByRole('region', { name: cellLabel(MON, lunch) })
+    await screen.findByRole('region', { name: formatLongDay(MON) })
 
     await user.click(screen.getByRole('button', { name: 'Next week' }))
-    await screen.findByRole('region', { name: cellLabel(addDays(MON, 7), lunch) })
+    await screen.findByRole('region', { name: formatLongDay(addDays(MON, 7)) })
     expect(router.state.location.search).toBe(`?week=${addDays(MON, 7)}`)
     expect(requests.map((r) => r.path)).toContain(
       `/planned-meals?from=${addDays(MON, 7)}&to=${addDays(SUN, 7)}`,
@@ -409,27 +422,75 @@ describe('calendar page', () => {
     await user.click(screen.getByRole('button', { name: 'Today' }))
     expect(router.state.location.search).toBe('')
     expect(
-      await screen.findByRole('region', { name: cellLabel(startOfWeek(todayIso()), lunch) }),
+      await screen.findByRole('region', { name: formatLongDay(startOfWeek(todayIso())) }),
     ).toBeInTheDocument()
   })
 
-  it('adds a recipe by tapping an empty cell', async () => {
+  it('adds a recipe to the end of a day by tapping its empty area', async () => {
     const requests = mockCalendarApi()
     const user = userEvent.setup()
     renderApp(`/calendar?week=${MON}`)
 
-    await user.click(await screen.findByRole('button', { name: `Add a recipe to ${cellLabel(TUE, lunch)}` }))
-    const picker = await screen.findByRole('dialog', { name: 'Add to Lunch' })
+    await user.click(
+      await screen.findByRole('button', { name: `Add a recipe to ${formatLongDay(TUE)}` }),
+    )
+    const picker = await screen.findByRole('dialog', { name: `Add to ${formatLongDay(TUE)}` })
     await user.click(await within(picker).findByRole('button', { name: /Soup/ }))
 
-    const tueLunch = screen.getByRole('region', { name: cellLabel(TUE, lunch) })
-    expect(await within(tueLunch).findByRole('button', { name: /^Soup, 4 servings/ })).toBeInTheDocument()
+    expect(
+      await within(dayRegion(TUE)).findByRole('button', { name: /^Soup, 4 servings/ }),
+    ).toBeInTheDocument()
     expect(requests.find((r) => r.method === 'POST')?.body).toEqual({
       date: TUE,
-      slot_id: lunch.id,
       recipe_id: soup.id,
       servings: 4,
     })
+  })
+
+  it('sets and clears the label from the meal sheet', async () => {
+    const requests = mockCalendarApi()
+    const user = userEvent.setup()
+    renderApp(`/calendar?week=${MON}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Soup, 4 servings, planned' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Soup' })
+    const select = within(sheet).getByRole('combobox', { name: 'Label' })
+    expect(select).toHaveValue('')
+    // Inactive labels are not offered for a meal that doesn't have one.
+    expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'None',
+      'Lunch',
+      'Dinner',
+    ])
+
+    await user.selectOptions(select, 'Dinner')
+    await waitFor(() =>
+      expect(requests.filter((r) => r.method === 'PATCH')).toEqual([
+        { method: 'PATCH', path: '/planned-meals/12', body: { slot_id: dinner.id } },
+      ]),
+    )
+    expect(
+      await within(dayRegion(MON, true)).findByRole('button', {
+        name: 'Soup, Dinner, 4 servings, planned',
+        hidden: true,
+      }),
+    ).toBeInTheDocument()
+
+    await user.selectOptions(select, 'None')
+    await waitFor(() =>
+      expect(requests.filter((r) => r.method === 'PATCH').at(-1)).toEqual({
+        method: 'PATCH',
+        path: '/planned-meals/12',
+        body: { slot_id: null },
+      }),
+    )
+    expect(
+      await within(dayRegion(MON, true)).findByRole('button', {
+        name: 'Soup, 4 servings, planned',
+        hidden: true,
+      }),
+    ).toBeInTheDocument()
+    expect(select).toHaveValue('')
   })
 
   it('edits servings and removes a meal from its sheet', async () => {
@@ -437,26 +498,26 @@ describe('calendar page', () => {
     const user = userEvent.setup()
     renderApp(`/calendar?week=${MON}`)
 
-    await user.click(await screen.findByRole('button', { name: 'Pancakes, 2 servings, planned' }))
-    const sheet = await screen.findByRole('dialog', { name: 'Pancakes' })
-    expect(within(sheet).getByRole('link', { name: 'Open recipe' })).toHaveAttribute('href', '/recipes/7')
+    await user.click(await screen.findByRole('button', { name: 'Soup, 4 servings, planned' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Soup' })
+    expect(within(sheet).getByRole('link', { name: 'Open recipe' })).toHaveAttribute('href', '/recipes/8')
     await user.click(within(sheet).getByRole('button', { name: 'More servings' }))
     await waitFor(() =>
       expect(requests.find((r) => r.method === 'PATCH')).toEqual({
         method: 'PATCH',
-        path: '/planned-meals/11',
-        body: { servings: 3 },
+        path: '/planned-meals/12',
+        body: { servings: 5 },
       }),
     )
     expect(
-      await screen.findByRole('button', { name: 'Pancakes, 3 servings, planned', hidden: true }),
+      await screen.findByRole('button', { name: 'Soup, 5 servings, planned', hidden: true }),
     ).toBeInTheDocument()
 
     await user.click(within(sheet).getByRole('button', { name: 'Remove from plan' }))
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /^Pancakes, / })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('button', { name: /^Soup, / })).not.toBeInTheDocument(),
     )
-    expect(requests).toContainEqual({ method: 'DELETE', path: '/planned-meals/11' })
+    expect(requests).toContainEqual({ method: 'DELETE', path: '/planned-meals/12' })
   })
 
   it('asks to uncook before removing or rescaling a cooked meal', async () => {

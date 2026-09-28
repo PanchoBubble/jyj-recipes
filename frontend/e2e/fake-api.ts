@@ -9,10 +9,14 @@ const slots = [
   { id: 4, name: 'Supper', position: 3, active: true },
 ]
 
+// Enough recipes that the docked panel scrolls on its own.
 const recipes = [
   { id: 7, name: 'Pancakes', default_servings: 2 },
   { id: 8, name: 'Lentil soup', default_servings: 4 },
   { id: 9, name: 'Green curry', default_servings: 3 },
+  ...['Risotto', 'Tacos', 'Shakshuka', 'Paella', 'Ramen', 'Chili', 'Frittata']
+    .concat(['Dal', 'Gnocchi', 'Pho', 'Stew', 'Salad', 'Pie', 'Bibimbap'])
+    .map((name, i) => ({ id: 20 + i, name, default_servings: 2 })),
 ].map((r) => ({
   ...r,
   description: null,
@@ -25,7 +29,7 @@ const recipes = [
   archived_at: null,
 }))
 
-function plannedMeal(id: number, recipeId: number, date: string, slotId: number, servings?: number) {
+function plannedMeal(id: number, recipeId: number, date: string, slotId: number | null, servings?: number) {
   const recipe = recipes.find((r) => r.id === recipeId)!
   return {
     id,
@@ -48,8 +52,26 @@ function plannedMeal(id: number, recipeId: number, date: string, slotId: number,
       default_servings: recipe.default_servings,
       archived_at: null,
     },
-    slot: slots.find((s) => s.id === slotId)!,
+    slot: slots.find((s) => s.id === slotId) ?? null,
   }
+}
+
+type Meal = ReturnType<typeof plannedMeal>
+
+/** Server ordering: position within the day, then id; renumbered 0..n after every write. */
+function byDay(meals: Meal[], date: string) {
+  return meals.filter((m) => m.date === date).sort((a, b) => a.position - b.position || a.id - b.id)
+}
+
+function place(meals: Meal[], meal: Meal, position: number | undefined) {
+  const others = meals.filter((m) => m.id !== meal.id)
+  const day = byDay(others, meal.date)
+  day.splice(Math.min(position ?? day.length, day.length), 0, meal)
+  day.forEach((m, i) => (m.position = i))
+  for (const date of new Set(others.map((m) => m.date))) {
+    if (date !== meal.date) byDay(others, date).forEach((m, i) => (m.position = i))
+  }
+  return [...others.filter((m) => m.date !== meal.date), ...day]
 }
 
 export interface ApiCall {
@@ -61,14 +83,15 @@ export interface ApiCall {
 /** In-memory stand-in for the backend, served through route interception. */
 export async function mockApi(page: Page) {
   const calls: ApiCall[] = []
-  // Enough stacked meals that the page scrolls vertically on a tall phone too.
+  // Enough meals on Monday that its column scrolls inside the week grid on a tall phone too.
   let meals = [
     plannedMeal(1, 8, WEEK, 1),
-    plannedMeal(2, 9, WEEK, 1),
-    plannedMeal(3, 9, WEEK, 3),
-    plannedMeal(4, 8, WEEK, 3),
-    plannedMeal(5, 9, WEEK, 4),
-  ].map((m, i, all) => ({ ...m, position: all.slice(0, i).filter((o) => o.slot_id === m.slot_id).length }))
+    plannedMeal(2, 9, WEEK, null),
+    plannedMeal(3, 7, WEEK, 3),
+    plannedMeal(4, 20, WEEK, null),
+    plannedMeal(5, 21, WEEK, 4),
+    plannedMeal(6, 22, WEEK, null),
+  ].map((m, position) => ({ ...m, position }))
   let nextId = 100
 
   const json = (route: Route, body: unknown, status = 200) =>
@@ -97,11 +120,22 @@ export async function mockApi(page: Page) {
         return json(route, meals.filter((m) => m.date >= from && m.date <= to))
       }
       if (method === 'POST' && path === '/planned-meals') {
-        const { date, slot_id, recipe_id, servings } = body as Record<string, never>
-        const created = plannedMeal(nextId++, recipe_id, date, slot_id, servings)
-        created.position = meals.filter((m) => m.date === date && m.slot_id === slot_id).length
-        meals = [...meals, created]
+        const { date, slot_id, recipe_id, servings, position } = body as Record<string, never>
+        const created = plannedMeal(nextId++, recipe_id, date, slot_id ?? null, servings)
+        meals = place(meals, created, position)
         return json(route, created, 201)
+      }
+      const patch = /^\/planned-meals\/(\d+)$/.exec(path)
+      if (method === 'PATCH' && patch) {
+        const meal = meals.find((m) => m.id === Number(patch[1]))
+        if (!meal) return json(route, { type: 'about:blank', title: 'Not Found', status: 404 }, 404)
+        const { date, position, ...fields } = body as Partial<Meal>
+        const moved = { ...meal, ...fields, date: date ?? meal.date }
+        meals =
+          date !== undefined || position !== undefined
+            ? place(meals, moved, position)
+            : meals.map((m) => (m.id === meal.id ? moved : m))
+        return json(route, meals.find((m) => m.id === meal.id))
       }
       return json(route, { type: 'about:blank', title: 'Not Found', status: 404 }, 404)
     },

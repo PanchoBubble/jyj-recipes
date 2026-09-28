@@ -18,7 +18,7 @@ function meal(id: number, name: string, overrides: Partial<PlannedMeal> = {}): P
   return {
     id,
     date: MON,
-    slot_id: dinner.id,
+    slot_id: null,
     recipe_id: id * 10,
     servings: 2,
     position: id,
@@ -36,7 +36,7 @@ function meal(id: number, name: string, overrides: Partial<PlannedMeal> = {}): P
       default_servings: 2,
       archived_at: null,
     },
-    slot: dinner,
+    slot: null,
     ...overrides,
   }
 }
@@ -113,7 +113,7 @@ function mockApi(initial: PlannedMeal[], { failCook = false } = {}) {
 
 // The open drawer hides the page from the accessibility tree.
 const cell = () =>
-  screen.getByRole('region', { name: `${formatLongDay(MON)}, Dinner`, hidden: true })
+  screen.getByRole('region', { name: formatLongDay(MON), hidden: true })
 
 async function openSheet(user: ReturnType<typeof userEvent.setup>, name: string) {
   await user.click(await screen.findByRole('button', { name: new RegExp(`^${name}, `) }))

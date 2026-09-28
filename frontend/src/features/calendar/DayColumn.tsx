@@ -1,88 +1,69 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Check, GripVertical, Plus, Users } from 'lucide-react'
+import { Check, Plus, Users } from 'lucide-react'
 import type { ComponentProps } from 'react'
 
 import { RecipePhoto } from '@/features/recipes/RecipePhoto'
 import { cn } from '@/lib/utils'
 
-import { formatLongDay } from './dates'
-import { dndId, isPending, type Cell, type DragData, type MealSlot, type PlannedMeal } from './plan'
+import { formatLongDay, type IsoDate } from './dates'
+import { DragHandle } from './DragHandle'
+import { dndId, isPending, type DragData, type DropData, type PlannedMeal } from './plan'
 
-interface SlotCellProps {
-  cell: Cell
-  slot: MealSlot
+interface DayColumnProps {
+  date: IsoDate
+  isToday: boolean
   meals: PlannedMeal[]
   onOpenMeal: (meal: PlannedMeal) => void
-  onAdd: (cell: Cell) => void
-  className?: string
+  onAdd: (date: IsoDate) => void
 }
 
-export function SlotCell({ cell, slot, meals, onOpenMeal, onAdd, className }: SlotCellProps) {
-  const disabled = !slot.active
-  const { setNodeRef, isOver, active } = useDroppable({
-    id: dndId.cell(cell),
-    data: { type: 'cell', cell, disabled },
-    disabled,
-  })
-  const label = `${formatLongDay(cell.date)}, ${slot.name}`
-  const dragging = active !== null
+/** One day: a single drop zone listing its meals in order, with the empty rest tappable to add. */
+export function DayColumn({ date, isToday, meals, onOpenMeal, onAdd }: DayColumnProps) {
+  const data: DropData = { type: 'day', date }
+  const { setNodeRef, isOver, active } = useDroppable({ id: dndId.day(date), data })
+  const label = formatLongDay(date)
 
   return (
     <section
       ref={setNodeRef}
       aria-label={label}
-      data-cell={dndId.cell(cell)}
+      data-day-column={date}
       className={cn(
-        'flex h-full min-w-0 snap-start flex-col gap-1 rounded-lg border border-transparent p-1 transition-colors',
-        dragging && !disabled && 'border-dashed border-border',
-        isOver && !disabled && 'border-solid border-primary bg-primary/5',
-        className,
+        'flex min-w-0 snap-start flex-col gap-1 border-r border-dashed p-1 transition-colors last:border-r-0',
+        isToday && 'bg-primary/5',
+        active && 'outline-1 -outline-offset-2 outline-border outline-dashed',
+        isOver && 'bg-primary/10 outline-primary outline-solid',
       )}
     >
       <SortableContext items={meals.map((m) => dndId.meal(m.id))} strategy={verticalListSortingStrategy}>
         <ul className="flex flex-col gap-1">
           {meals.map((meal) => (
-            <SortableMealCard
-              key={meal.id}
-              meal={meal}
-              cellDisabled={disabled}
-              onOpen={() => onOpenMeal(meal)}
-            />
+            <SortableMealCard key={meal.id} meal={meal} onOpen={() => onOpenMeal(meal)} />
           ))}
         </ul>
       </SortableContext>
 
-      {!disabled && (
-        <button
-          type="button"
-          onClick={() => onAdd(cell)}
-          aria-label={`Add a recipe to ${label}`}
-          className={cn(
-            'flex items-center justify-center gap-1 rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
-            meals.length === 0 ? 'h-11 border border-dashed' : 'h-9',
-          )}
-        >
-          <Plus className="size-4" aria-hidden />
-          {meals.length === 0 && 'Add'}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => onAdd(date)}
+        aria-label={`Add a recipe to ${label}`}
+        className={cn(
+          'flex min-h-11 flex-1 items-start justify-center gap-1 rounded-md pt-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+          meals.length === 0 && 'border border-dashed',
+        )}
+      >
+        <Plus className="size-4" aria-hidden />
+        {meals.length === 0 && 'Add'}
+      </button>
     </section>
   )
 }
 
-function SortableMealCard({
-  meal,
-  cellDisabled,
-  onOpen,
-}: {
-  meal: PlannedMeal
-  cellDisabled: boolean
-  onOpen: () => void
-}) {
+function SortableMealCard({ meal, onOpen }: { meal: PlannedMeal; onOpen: () => void }) {
   const pending = isPending(meal)
-  const data: DragData & { disabled: boolean } = { type: 'meal', meal, disabled: cellDisabled }
+  const data: DragData = { type: 'meal', meal }
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: dndId.meal(meal.id), data, disabled: pending })
 
@@ -140,7 +121,7 @@ export function MealCardView({
         type="button"
         onClick={onOpen}
         disabled={!onOpen}
-        aria-label={`${meal.recipe.name}, ${meal.servings} ${meal.servings === 1 ? 'serving' : 'servings'}, ${STATUS_LABEL[status]}`}
+        aria-label={`${meal.recipe.name}${meal.slot ? `, ${meal.slot.name}` : ''}, ${meal.servings} ${meal.servings === 1 ? 'serving' : 'servings'}, ${STATUS_LABEL[status]}`}
         className="flex w-full min-w-0 flex-col items-start gap-1 rounded-md p-1 text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <span className="flex h-9 items-center md:h-8">
@@ -158,7 +139,15 @@ export function MealCardView({
         >
           {meal.recipe.name}
         </span>
-        <span className="flex items-center gap-1">
+        <span className="flex flex-wrap items-center gap-1">
+          {meal.slot && (
+            <span
+              data-meal-label=""
+              className="max-w-full truncate rounded-full bg-primary/10 px-1.5 py-0.5 text-[0.6875rem] leading-none font-medium text-primary"
+            >
+              {meal.slot.name}
+            </span>
+          )}
           <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
             <Users className="size-3" aria-hidden />
             {meal.servings}
@@ -170,22 +159,5 @@ export function MealCardView({
       </button>
       <DragHandle {...handleProps} className="absolute top-0 right-0 md:size-9" />
     </div>
-  )
-}
-
-/** The only element with touch-action: none, so the rest of the page keeps scrolling. */
-export function DragHandle({ className, ...props }: ComponentProps<'button'>) {
-  return (
-    <button
-      type="button"
-      data-drag-handle=""
-      className={cn(
-        'inline-flex size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground select-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:cursor-grabbing disabled:cursor-default disabled:opacity-40 [-webkit-touch-callout:none]',
-        className,
-      )}
-      {...props}
-    >
-      <GripVertical className="size-5" aria-hidden />
-    </button>
   )
 }

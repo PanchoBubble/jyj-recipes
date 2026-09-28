@@ -18,7 +18,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 
 import { useCreatePlannedMeal, useUpdatePlannedMeal } from './api'
 import { formatLongDay } from './dates'
-import { dndId, type DragData, type DropAction, type DropData, type MealSlot, type PlannedMeal } from './plan'
+import { dndId, type DragData, type DropAction, type DropData, type PlannedMeal } from './plan'
 
 /**
  * Mouse and pen only: touch goes through TouchSensor so a finger has to hold still
@@ -43,12 +43,12 @@ export function useCalendarSensors() {
   )
 }
 
-const isCell = (id: unknown) => String(id).startsWith('cell:')
+const isDay = (id: unknown) => String(id).startsWith('day:')
 const isMeal = (id: unknown) => String(id).startsWith('meal:')
 
 /**
- * Most specific target under the finger (tray, then meal card, then cell). Anywhere else,
- * including gaps and headers, falls back to the nearest cell so a drop is never lost.
+ * Most specific target under the finger (recipe panel, then meal card, then day column).
+ * Anywhere else, including gaps and headers, falls back to the nearest day so a drop is never lost.
  */
 export const calendarCollision: CollisionDetection = (args) => {
   if (args.pointerCoordinates) {
@@ -56,11 +56,11 @@ export const calendarCollision: CollisionDetection = (args) => {
     const hit =
       hits.find((h) => h.id === dndId.tray) ??
       hits.find((h) => isMeal(h.id)) ??
-      hits.find((h) => isCell(h.id))
+      hits.find((h) => isDay(h.id))
     if (hit) return [hit]
     return closestCenter({
       ...args,
-      droppableContainers: args.droppableContainers.filter((c) => isCell(c.id)),
+      droppableContainers: args.droppableContainers.filter((c) => isDay(c.id)),
     })
   }
   return closestCenter({
@@ -73,10 +73,7 @@ export const calendarMeasuring: DndContextProps['measuring'] = {
   droppable: { strategy: MeasuringStrategy.Always },
 }
 
-/**
- * The x threshold only matters for the week grid's column scroller on phones; the page
- * itself never scrolls sideways. It is wide enough to cover the sticky slot labels.
- */
+/** Applies to the week grid (sideways on phones, down a long day) and the recipe panel. */
 export const calendarAutoScroll: DndContextProps['autoScroll'] = {
   threshold: { x: 0.2, y: 0.15 },
   acceleration: 12,
@@ -87,17 +84,16 @@ export function describeDrag(data: DragData | undefined) {
   return data.type === 'recipe' ? data.recipe.name : data.meal.recipe.name
 }
 
-export function describeDrop(data: DropData | undefined, slots: MealSlot[]) {
+export function describeDrop(data: DropData | undefined) {
   if (!data) return 'nowhere'
-  if (data.type === 'tray') return 'the recipe tray, release to cancel'
-  const cell = data.type === 'cell' ? data.cell : { date: data.meal.date, slotId: data.meal.slot_id }
-  const slot = slots.find((s) => s.id === cell.slotId)
-  return `${formatLongDay(cell.date)}, ${slot?.name ?? 'meal'}`
+  if (data.type === 'tray') return 'the recipe panel, release to cancel'
+  if (data.type === 'day') return formatLongDay(data.date)
+  return `${formatLongDay(data.meal.date)}, at ${data.meal.recipe.name}`
 }
 
-export function calendarAnnouncements(slots: MealSlot[]): Announcements {
+export function calendarAnnouncements(): Announcements {
   const drag = (d: unknown) => describeDrag(d as DragData | undefined)
-  const drop = (d: unknown) => describeDrop(d as DropData | undefined, slots)
+  const drop = (d: unknown) => describeDrop(d as DropData | undefined)
   return {
     onDragStart: ({ active }) => `Picked up ${drag(active.data.current)}.`,
     onDragOver: ({ active, over }) =>
@@ -111,28 +107,25 @@ export function calendarAnnouncements(slots: MealSlot[]): Announcements {
 }
 
 /** Runs the API call a drop resolved to; each mutation updates the cache optimistically. */
-export function useDropAction(slots: MealSlot[]) {
-  const create = useCreatePlannedMeal()
-  const update = useUpdatePlannedMeal()
-  const { mutate: createMeal } = create
-  const { mutate: updateMeal } = update
+export function useDropAction() {
+  const { mutate: createMeal } = useCreatePlannedMeal()
+  const { mutate: updateMeal } = useUpdatePlannedMeal()
 
   return useCallback(
     (action: DropAction, meals: readonly PlannedMeal[]) => {
-      const slot = slots.find((s) => s.id === action.cell.slotId)
-      if (!slot) return
       if (action.kind === 'create') {
-        createMeal({ cell: action.cell, slot, recipe: action.recipe, servings: action.servings })
+        const { date, recipe, servings, position } = action
+        createMeal({ date, recipe, servings, position })
         return
       }
       const meal = meals.find((m) => m.id === action.id)
       if (!meal) return
       const changes =
         action.kind === 'move'
-          ? { date: action.cell.date, slot_id: action.cell.slotId, position: action.position }
+          ? { date: action.date, position: action.position }
           : { position: action.position }
-      updateMeal({ meal, changes, slot })
+      updateMeal({ meal, changes })
     },
-    [slots, createMeal, updateMeal],
+    [createMeal, updateMeal],
   )
 }

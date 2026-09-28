@@ -10,12 +10,11 @@ import { toastCookResult, type CookResult } from './cook'
 
 import type { IsoDate } from './dates'
 import {
-  applyAppend,
+  applyInsert,
   applyMove,
   applyRemove,
   applyReplace,
   draftMeal,
-  type Cell,
   type MealSlot,
   type PlannedMeal,
   type TrayRecipe,
@@ -93,26 +92,27 @@ function settle(queryClient: QueryClient) {
 }
 
 export interface CreateMealInput {
-  cell: Cell
-  slot: MealSlot
+  date: IsoDate
   recipe: TrayRecipe
   servings: number
+  /** Index in the day; the server appends when it is left out. */
+  position?: number
 }
 
 export function useCreatePlannedMeal() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationKey,
-    mutationFn: ({ cell, recipe, servings }: CreateMealInput) =>
+    mutationFn: ({ date, recipe, servings, position }: CreateMealInput) =>
       api.post<PlannedMeal>('/planned-meals', {
-        date: cell.date,
-        slot_id: cell.slotId,
+        date,
         recipe_id: recipe.id,
         servings,
+        ...(position === undefined ? {} : { position }),
       }),
-    onMutate: async ({ cell, slot, recipe, servings }) => {
-      const draft = draftMeal(recipe, cell, slot, servings)
-      const snapshot = await optimistic(queryClient, (meals) => applyAppend(meals, draft))
+    onMutate: async ({ date, recipe, servings, position }) => {
+      const draft = draftMeal(recipe, date, servings)
+      const snapshot = await optimistic(queryClient, (meals) => applyInsert(meals, draft, position))
       return { snapshot, tempId: draft.id }
     },
     onSuccess: (saved, _input, context) => {
@@ -128,17 +128,18 @@ export function useCreatePlannedMeal() {
 
 export interface MealChanges {
   date?: IsoDate
-  slot_id?: number
   position?: number
   servings?: number
   status?: 'planned' | 'skipped'
+  /** null clears the label; leaving it out keeps it. */
+  slot_id?: number | null
 }
 
 export interface UpdateMealInput {
   meal: PlannedMeal
   changes: MealChanges
-  /** Target slot for a move, so the optimistic card shows the right slot. */
-  slot?: MealSlot
+  /** The label behind `changes.slot_id`, so the optimistic card shows it. */
+  slot?: MealSlot | null
 }
 
 export function useUpdatePlannedMeal() {
@@ -148,19 +149,12 @@ export function useUpdatePlannedMeal() {
     mutationFn: ({ meal, changes }: UpdateMealInput) =>
       api.patch<PlannedMeal>(`/planned-meals/${meal.id}`, changes),
     onMutate: async ({ meal, changes, slot }) => {
-      const { date, slot_id, position, ...fields } = changes
-      const moves = date !== undefined || slot_id !== undefined || position !== undefined
+      const { date, position, ...fields } = changes
+      const label = 'slot_id' in changes ? { slot: changes.slot_id === null ? null : (slot ?? meal.slot) } : {}
+      const moves = date !== undefined || position !== undefined
       const snapshot = await optimistic(queryClient, (meals) => {
-        const next = moves
-          ? applyMove(
-              meals,
-              meal.id,
-              { date: date ?? meal.date, slotId: slot_id ?? meal.slot_id },
-              position,
-              slot,
-            )
-          : meals
-        return next.map((m) => (m.id === meal.id ? { ...m, ...fields } : m))
+        const next = moves ? applyMove(meals, meal.id, date ?? meal.date, position) : meals
+        return next.map((m) => (m.id === meal.id ? { ...m, ...fields, ...label } : m))
       })
       return { snapshot }
     },
