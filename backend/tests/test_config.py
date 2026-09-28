@@ -30,14 +30,14 @@ def test_reads_values_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("DATABASE_URL", PROD_URL)
     monkeypatch.setenv("SESSION_SECRET", STRONG_SECRET)
-    monkeypatch.setenv("DB_ECHO", "true")
+    monkeypatch.setenv("CODEX_TIMEOUT_SECONDS", "30")
 
     settings = make_settings()
 
     assert settings.is_production
     assert settings.database_url == PROD_URL
     assert settings.session_secret.get_secret_value() == STRONG_SECRET
-    assert settings.db_echo is True
+    assert settings.codex_timeout_seconds == 30
 
 
 def test_secrets_are_not_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:

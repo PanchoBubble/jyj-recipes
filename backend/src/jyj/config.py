@@ -61,6 +61,9 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_SECRET must be at least 32 characters in production")
         if not self.session_cookie_secure:
             raise ValueError("SESSION_COOKIE_SECURE cannot be false in production")
+        if self.db_echo:
+            # Echo logs bound parameters at INFO: password and token hashes, chat text.
+            raise ValueError("DB_ECHO cannot be true in production")
         return self
 
     @property

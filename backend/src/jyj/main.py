@@ -31,7 +31,13 @@ async def _service_error(_: Request, exc: ServiceError) -> JSONResponse:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="jyj")
+    docs = get_settings().app_env == "development"
+    app = FastAPI(
+        title="jyj",
+        openapi_url="/openapi.json" if docs else None,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+    )
     app.state.login_limiter = LoginRateLimiter()
     app.state.transcribe_limiter = new_transcribe_limiter()
     install_problem_handlers(app)
