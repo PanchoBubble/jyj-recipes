@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     session_secret: SecretStr = SecretStr("dev-insecure-session-secret")
     # Only turn off for plain-http local dev; browsers drop Secure cookies over http.
     session_cookie_secure: bool = True
+    codex_enabled: bool = True
+    codex_binary: str = "codex"
+    codex_model: str | None = None
+    codex_timeout_seconds: float = Field(default=90.0, gt=0)
 
     @model_validator(mode="after")
     def _require_explicit_values_in_production(self) -> "Settings":

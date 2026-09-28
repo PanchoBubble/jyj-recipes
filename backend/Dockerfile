@@ -20,6 +20,29 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
+# Codex CLI: the official static musl build from github.com/openai/codex releases.
+# To bump: set CODEX_VERSION to the new rust-v* tag and copy the sha256 digests of
+# codex-{aarch64,x86_64}-unknown-linux-musl.tar.gz from the release page, or run
+#   gh release view rust-v<version> --repo openai/codex --json assets \
+#     -q '.assets[]|select(.name|test("^codex-(aarch64|x86_64)-unknown-linux-musl.tar.gz$"))|.name+" "+.digest'
+FROM python:${PYTHON_VERSION}-slim AS codex
+ARG TARGETARCH
+ARG CODEX_VERSION=0.158.0
+ARG CODEX_SHA256_ARM64=91e3fafe5ff845a8f685a05d04919146fb30fdc9245af1a42a2f7f239959e90c
+ARG CODEX_SHA256_AMD64=af9f5aa6e6662accf9d707cef0d9ca083880a173a9c2b6c22947edb7830e5778
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      arm64) triple=aarch64-unknown-linux-musl; sha="$CODEX_SHA256_ARM64" ;; \
+      amd64) triple=x86_64-unknown-linux-musl; sha="$CODEX_SHA256_AMD64" ;; \
+      *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    url="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/codex-${triple}.tar.gz"; \
+    python -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], '/tmp/codex.tar.gz')" "$url"; \
+    echo "${sha}  /tmp/codex.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/codex.tar.gz -C /tmp; \
+    install -m 0755 "/tmp/codex-${triple}" /usr/local/bin/codex; \
+    rm -f /tmp/codex.tar.gz "/tmp/codex-${triple}"
+
 FROM python:${PYTHON_VERSION}-slim AS runtime
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -31,6 +54,7 @@ RUN groupadd --system --gid 10001 app \
     && mkdir -p "$PHOTOS_DIR" "$CODEX_HOME" \
     && chown app:app "$PHOTOS_DIR" "$CODEX_HOME"
 WORKDIR /app
+COPY --from=codex /usr/local/bin/codex /usr/local/bin/codex
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app alembic.ini ./
 COPY --chown=app:app alembic ./alembic
