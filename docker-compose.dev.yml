@@ -1,0 +1,26 @@
+# Hot reload: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  backend:
+    command: ["uvicorn", "jyj.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+    environment:
+      PYTHONPATH: /app/src
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./backend/src:/app/src:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    image: jyj-frontend-dev
+    environment:
+      VITE_API_PROXY: http://backend:8000
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy

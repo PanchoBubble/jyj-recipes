@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install dev dev-backend dev-frontend lint lint-backend lint-frontend format test test-backend test-frontend migrate migration
+.PHONY: env-check up down build logs test-db-up test-db-down
 
 BACKEND := backend
 FRONTEND := frontend
@@ -12,6 +13,11 @@ help:
 	@echo "make test      pytest + vitest"
 	@echo "make migrate   alembic upgrade head against DATABASE_URL"
 	@echo "make migration name=...  autogenerate an alembic revision"
+	@echo "make build     build docker images (backend, web)"
+	@echo "make up        start the stack in the background (needs .env)"
+	@echo "make down      stop the stack (volumes are kept)"
+	@echo "make logs      follow stack logs"
+	@echo "make test-db-up / test-db-down  throwaway Postgres on 127.0.0.1:55432"
 
 install:
 	cd $(BACKEND) && uv sync --locked
@@ -51,3 +57,26 @@ migrate:
 migration:
 	@test -n "$(name)" || { echo 'usage: make migration name="add users"'; exit 1; }
 	cd $(BACKEND) && uv run alembic revision --autogenerate -m "$(name)"
+
+COMPOSE := docker compose
+
+env-check:
+	@test -f .env || { echo ".env missing: cp .env.example .env and edit it"; exit 1; }
+
+build: env-check
+	$(COMPOSE) build
+
+up: env-check
+	$(COMPOSE) up -d --wait
+
+down:
+	$(COMPOSE) down
+
+logs:
+	$(COMPOSE) logs -f --tail=100
+
+test-db-up:
+	$(COMPOSE) --profile test up -d --wait db-test
+
+test-db-down:
+	$(COMPOSE) --profile test rm -sf db-test
