@@ -60,6 +60,18 @@ The API uses a `jyj_session` HttpOnly cookie and requires `X-Requested-With: jyj
 docker compose exec backend jyj chat purge   # --days N to override
 ```
 
+## Photo search (Pexels)
+
+The recipe page and editor have a **Find a photo** button that searches [Pexels](https://www.pexels.com) for free stock photos, and the assistant can do the same (`find_recipe_photos`, `set_recipe_photo`). It is off until a key is set:
+
+1. Get a free API key at https://www.pexels.com/api/.
+2. Put it in `.env` as `PEXELS_API_KEY=...` (never commit it; `.env` is git-ignored).
+3. Restart the backend (`make up`, or restart `make dev`).
+
+Without a key, `GET /api/v1/images/search` and `POST /api/v1/recipes/{id}/photo/from-search` return 503 "photo search isn't configured" and the app hides the button. The key stays on the server: searches go through the backend (30 per user per minute by default, `PHOTO_SEARCH_RATE_LIMIT_PER_MINUTE`; results cached for 10 minutes; `PEXELS_TIMEOUT_SECONDS`, default 10). Thumbnails load straight from `images.pexels.com`, which the Caddy CSP allows in `img-src`. Using a photo sends only its Pexels id; the backend looks it up again, downloads it only from `https://images.pexels.com` (no redirects elsewhere, capped at `PHOTO_MAX_BYTES`) and runs it through the normal photo pipeline.
+
+Pexels' [guidelines](https://www.pexels.com/api/documentation/#guidelines) ask for attribution, so an imported photo keeps its credit (`photo_credit` on recipe responses) and the recipe page shows "Photo by <photographer> on Pexels" with links back. Uploading your own photo or removing it clears the credit.
+
 ## Speech to text
 
 The backend image ships `whisper-cli` (whisper.cpp v1.9.1, built for armv8.2-a+dotprod on arm64) and a minimal static `ffmpeg`. Models are not baked in: `make whisper-download` (or `model=base`) fetches the multilingual ggml model from the whisper.cpp Hugging Face repo into the `whisper-models` volume and verifies its pinned SHA-256. `jyj.stt.get_transcriber()` converts uploads (webm/opus, mp4/aac, ogg, wav, mp3; max 5 MiB, 60 s) to 16 kHz mono WAV, runs one job at a time and deletes temp files afterwards. Audio is never persisted and transcripts are only logged at DEBUG. `tests/test_stt_integration.py` runs against a real install when `WHISPER_MODEL_PATH` points at a model. `POST /api/v1/chat/transcribe` (multipart field `audio`) returns `{text, language, confidence, low_confidence, duration_seconds}` for the user to review; the edited text is then sent as a normal chat message with `input: "voice"`. `STT_LOW_CONFIDENCE` (default 0.5) sets the flag and `STT_RATE_LIMIT_PER_MINUTE` (default 20) caps requests per user. `GET /api/v1/chat/health` reports `stt.available/detail/model`.

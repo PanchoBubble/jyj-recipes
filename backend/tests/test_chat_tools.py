@@ -329,6 +329,7 @@ def test_output_schema_splits_reads_and_writes(registry: Registry) -> None:
     assert tools_in("needs") == {
         "search_recipes",
         "get_recipe",
+        "find_recipe_photos",
         "list_ingredients",
         "get_stock",
         "get_plan",
@@ -338,6 +339,7 @@ def test_output_schema_splits_reads_and_writes(registry: Registry) -> None:
         "create_recipe",
         "update_recipe",
         "delete_recipe",
+        "set_recipe_photo",
         "create_ingredient",
         "adjust_stock",
         "set_stock",
@@ -801,7 +803,15 @@ FORBIDDEN_IMPORTS = (
 
 @pytest.mark.parametrize(
     "module",
-    ["recipes.py", "ingredients.py", "stock.py", "calendar.py", "shopping.py", "common.py"],
+    [
+        "recipes.py",
+        "photos.py",
+        "ingredients.py",
+        "stock.py",
+        "calendar.py",
+        "shopping.py",
+        "common.py",
+    ],
 )
 def test_tool_modules_only_reach_data_through_services(module: str) -> None:
     tree = ast.parse((TOOLS_DIR / module).read_text())

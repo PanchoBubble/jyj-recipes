@@ -215,6 +215,7 @@ def run_turn(
         context = build_context(db, conversation.id, user_message.id, text)
         schema = registry.output_schema()
         gathered: list[dict[str, Any]] = []
+        read_cards: list[dict[str, Any]] = []
         rounds = 0
         while True:
             rounds += 1
@@ -234,6 +235,8 @@ def run_turn(
                 emit(ChatEvent("status", {"state": "running_tool", "tool": _label(call.tool)}))
                 result = _execute(registry, ctx, call, "read")
                 action_ids.extend([result.action_id] if result.action_id else [])
+                if result.ok and (tool := registry.get(call.tool)) is not None and tool.card:
+                    read_cards.append(action_card(call.tool, call.args, result))
                 gathered.append(_quoted(rounds, call, result))
 
         batch_id = uuid.uuid4() if len(turn.actions) > MAX_ACTIONS else None
@@ -277,6 +280,7 @@ def run_turn(
     cards = [action_card(call.tool, call.args, result) for call, result in executed]
     if batch_id is not None:
         cards = [batch_card(batch_id, cards)]
+    cards = [*read_cards, *cards]
     for card in cards:
         emit(ChatEvent("action", card))
     emit(ChatEvent("assistant", {"message_id": assistant.id, "reply": turn.reply}))

@@ -79,7 +79,9 @@ units            code PK ('g','kg','ml','l','tsp','tbsp','cup','piece','pinch'),
 ingredients      id, name (unique, ci), dimension, default_unit → units, category (nullable, for shopping grouping),
                  grams_per_ml (nullable), grams_per_piece (nullable), created_at, updated_at
 
-recipes          id, name, description, photo_path (nullable), default_servings, created_by → users, created_at, updated_at, archived_at
+recipes          id, name, description, photo_path (nullable), photo_credit jsonb (nullable: provider, photographer,
+                 photographer_url, page_url for photo-search imports), default_servings, created_by → users,
+                 created_at, updated_at, archived_at
 recipe_ingredients id, recipe_id → recipes (cascade), ingredient_id → ingredients (restrict),
                  amount_per_person numeric, unit_code → units, note, position
                  CHECK amount_per_person > 0 unless unit dimension = 'none' ("to taste")
@@ -129,6 +131,8 @@ GET    /ingredients?q=        POST /ingredients      GET|PATCH|DELETE /ingredien
 GET    /recipes?q=&page=      POST /recipes          GET|PATCH|DELETE /recipes/{id}
        body includes ingredients[] {ingredient_id | new_ingredient{name,dimension,default_unit}, amount_per_person, unit, note}
 PUT    /recipes/{id}/photo    multipart, ≤ 10 MiB, jpeg/png/webp/heic sniffed   DELETE /recipes/{id}/photo
+POST   /recipes/{id}/photo/from-search  {provider: "pexels", photo_id}; server re-fetches and downloads from images.pexels.com only
+GET    /images/search?q=&page=  Pexels search proxy; 503 when PEXELS_API_KEY is unset
 GET    /recipes/{id}/scaled?servings=N
 
 GET    /meal-slots            POST /meal-slots       PATCH|DELETE /meal-slots/{id}   PUT /meal-slots/order
@@ -200,7 +204,7 @@ Memory budget target (steady state): Postgres ≤ 256 MiB (`shared_buffers=64MB`
 - LAN only: Caddy binds to the LAN interface; `db` and `backend` publish no ports. No port forwarding, no tunnel.
 - Household auth (§2), session TTL 30 days sliding, logout revokes, `create-user` / `reset-password` via `docker compose exec backend jyj users ...` (no signup endpoint).
 - Login rate limiting and generic error messages.
-- Headers: CSP (`default-src 'self'`, `media-src 'self' blob:`), `Permissions-Policy: microphone=(self)`, HSTS off for tls internal (avoid lock-in), `X-Content-Type-Options`, `frame-ancestors 'none'`.
+- Headers: CSP (`default-src 'self'`, `media-src 'self' blob:`, `img-src` adds `https://images.pexels.com` for photo search thumbnails), `Permissions-Policy: microphone=(self)`, HSTS off for tls internal (avoid lock-in), `X-Content-Type-Options`, `frame-ancestors 'none'`.
 - Uploads: size caps, magic-byte sniffing, re-encode images, random filenames, audio never persisted.
 - Chat: tools scoped to the service layer, schema validation, confirmation for destructive ops, audit table, no raw SQL, Codex sandbox read-only in empty dir.
 - Secrets: `.env` (DB password, session secret) git-ignored, `.env.example` committed with placeholders; Codex auth lives only in its own volume, never in the repo or `.env`.

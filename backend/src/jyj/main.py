@@ -5,6 +5,7 @@ from jyj.api.auth import router as auth_router
 from jyj.api.body_limit import BodySizeLimitMiddleware
 from jyj.api.csrf import CSRFHeaderMiddleware
 from jyj.api.health import router as health_router
+from jyj.api.images import router as images_router
 from jyj.api.ingredients import router as ingredients_router
 from jyj.api.meal_slots import router as meal_slots_router
 from jyj.api.planned_meals import router as planned_meals_router
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(ingredients_router, prefix=API_PREFIX)
     app.include_router(stock_router, prefix=API_PREFIX)
     app.include_router(recipes_router, prefix=API_PREFIX)
+    app.include_router(images_router, prefix=API_PREFIX)
     app.include_router(meal_slots_router, prefix=API_PREFIX)
     app.include_router(planned_meals_router, prefix=API_PREFIX)
     app.include_router(shopping_preview_router, prefix=API_PREFIX)

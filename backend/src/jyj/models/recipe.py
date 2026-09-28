@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from jyj.db import Base, TimestampMixin
@@ -32,6 +34,8 @@ class Recipe(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text)
     photo_path: Mapped[str | None] = mapped_column(String(255))
+    # {provider, photographer, photographer_url, page_url} for photos from a photo search.
+    photo_credit: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     default_servings: Mapped[int] = mapped_column(server_default=text("2"))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

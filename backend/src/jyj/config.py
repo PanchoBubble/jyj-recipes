@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     photos_dir: Path = Path("/var/lib/jyj/photos")
     photo_max_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
 
+    # Photo search is off while this is unset or empty.
+    pexels_api_key: SecretStr | None = Field(default=None, repr=False)
+    pexels_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    photo_search_rate_limit_per_minute: int = Field(default=30, ge=1)
+
     @model_validator(mode="after")
     def _require_explicit_values_in_production(self) -> "Settings":
         if self.app_env != "production":

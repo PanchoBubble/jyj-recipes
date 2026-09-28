@@ -1,4 +1,4 @@
-import { Camera, ImagePlus, Trash2, Upload, X } from 'lucide-react'
+import { Camera, ImagePlus, Search, Trash2, Upload, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -15,6 +15,8 @@ import {
 import { Button } from '@/components/ui/button'
 import type { Recipe } from '@/features/recipes/api'
 import { photoErrorMessage, useRemoveRecipePhoto, useUploadRecipePhoto } from '@/features/recipes/photo'
+import { usePhotoSearchAvailable } from '@/features/recipes/photoSearch'
+import { PhotoCredit, PhotoSearchSheet } from '@/features/recipes/PhotoSearchSheet'
 import { RecipePhoto } from '@/features/recipes/RecipePhoto'
 
 type Props =
@@ -41,6 +43,8 @@ export function PhotoField(props: Props) {
   const upload = useUploadRecipePhoto()
   const [ownPending, setOwnPending] = useState<File | null>(null)
   const [ownProgress, setOwnProgress] = useState<number | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchAvailable = usePhotoSearchAvailable()
 
   const recipe = props.recipe
   const pending = recipe ? ownPending : props.pending
@@ -100,6 +104,13 @@ export function PhotoField(props: Props) {
         )}
         {busy && <UploadProgress value={progress} />}
       </div>
+      {!pending && recipe?.photo_url && recipe.photo_credit && (
+        <PhotoCredit
+          photographer={recipe.photo_credit.photographer}
+          photographerUrl={recipe.photo_credit.photographer_url}
+          pageUrl={recipe.photo_credit.page_url}
+        />
+      )}
 
       <div className="flex flex-wrap gap-2">
         {pending ? (
@@ -147,11 +158,22 @@ export function PhotoField(props: Props) {
             >
               <Camera aria-hidden /> Take photo
             </Button>
+            {recipe && searchAvailable && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 flex-1"
+                onClick={() => setSearching(true)}
+              >
+                <Search aria-hidden /> Find a photo
+              </Button>
+            )}
             {recipe && hasPhoto && <RemovePhoto recipe={recipe} />}
           </>
         )}
       </div>
       {props.hint && <p className="text-xs text-muted-foreground">{props.hint}</p>}
+      {recipe && <PhotoSearchSheet recipe={recipe} open={searching} onOpenChange={setSearching} />}
 
       <input
         ref={libraryInput}

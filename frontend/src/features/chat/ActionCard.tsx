@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { photoSearchErrorMessage, useSetPhotoFromSearch } from '@/features/recipes/photoSearch'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -74,6 +75,10 @@ export function ActionCard({
         </Badge>
       </div>
 
+      {action.tool === 'find_recipe_photos' && action.status === 'executed' && (
+        <PhotoStrip data={action.data} />
+      )}
+
       {pending && action.id !== null && (
         <div className="flex gap-2">
           <Button
@@ -114,4 +119,114 @@ function StatusIcon({ status }: { status: ChatAction['status'] }) {
     return <CircleAlert className={cn(className, 'text-destructive')} aria-hidden />
   }
   return <X className={cn(className, 'text-muted-foreground')} aria-hidden />
+}
+
+interface StripPhoto {
+  id: number
+  alt: string
+  photographer: string
+  thumb_url: string
+}
+
+function stripPhotos(data: ChatAction['data']): StripPhoto[] {
+  const raw = data?.photos
+  if (!Array.isArray(raw)) return []
+  return raw.filter(
+    (p): p is StripPhoto =>
+      typeof p === 'object' &&
+      p !== null &&
+      typeof p.id === 'number' &&
+      typeof p.thumb_url === 'string' &&
+      p.thumb_url.startsWith('https://images.pexels.com/'),
+  )
+}
+
+/** Photo search results from the assistant; "Use" sets the photo on the referenced recipe. */
+function PhotoStrip({ data }: { data: ChatAction['data'] }) {
+  const photos = stripPhotos(data)
+  const recipeId = typeof data?.recipe_id === 'number' ? data.recipe_id : null
+  const recipeName = typeof data?.recipe_name === 'string' ? data.recipe_name : 'the recipe'
+  const [replaces, setReplaces] = useState(data?.has_photo === true)
+  const [confirming, setConfirming] = useState<number | null>(null)
+  const [used, setUsed] = useState<number | null>(null)
+  const use = useSetPhotoFromSearch()
+
+  if (photos.length === 0) return <p className="text-muted-foreground">No photos found.</p>
+
+  const onUse = (photo: StripPhoto) => {
+    if (recipeId === null) return
+    if (replaces && confirming !== photo.id) {
+      setConfirming(photo.id)
+      return
+    }
+    setConfirming(null)
+    use.mutate(
+      { recipeId, photoId: photo.id },
+      {
+        onSuccess: () => {
+          setUsed(photo.id)
+          setReplaces(true)
+          toast.success(`Photo set for ${recipeName}`)
+        },
+        onError: (error) =>
+          toast.error("Couldn't use that photo", { description: photoSearchErrorMessage(error) }),
+      },
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ul aria-label="Photo results" className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {photos.map((photo) => (
+          <li key={photo.id} className="flex w-28 shrink-0 flex-col gap-1">
+            <img
+              src={photo.thumb_url}
+              alt={photo.alt || `Photo by ${photo.photographer}`}
+              loading="lazy"
+              decoding="async"
+              referrerPolicy="no-referrer"
+              className="aspect-[4/3] w-full rounded-md bg-muted object-cover"
+            />
+            <span className="truncate text-xs text-muted-foreground">{photo.photographer}</span>
+            {recipeId !== null && (
+              <Button
+                size="sm"
+                variant={used === photo.id ? 'secondary' : 'outline'}
+                className="h-9"
+                aria-label={
+                  confirming === photo.id
+                    ? `Replace the photo of ${recipeName} with the photo by ${photo.photographer}`
+                    : `Use photo by ${photo.photographer}`
+                }
+                disabled={use.isPending || used === photo.id}
+                onClick={() => onUse(photo)}
+              >
+                {used === photo.id ? 'In use' : confirming === photo.id ? 'Replace?' : 'Use'}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Photos from{' '}
+        <a
+          href="https://www.pexels.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline underline-offset-2"
+        >
+          Pexels
+        </a>
+        {recipeId === null && '. Ask the assistant to use one for a recipe.'}
+      </p>
+      {recipeId !== null && (
+        <Link
+          to={`/recipes/${recipeId}`}
+          className="inline-flex min-h-10 items-center gap-1 self-start font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Open recipe <ChevronRight className="size-4" aria-hidden />
+        </Link>
+      )}
+    </div>
+  )
 }

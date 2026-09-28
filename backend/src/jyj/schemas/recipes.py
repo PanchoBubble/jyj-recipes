@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -92,12 +92,29 @@ class RecipeIngredientOut(BaseModel):
         )
 
 
+class PhotoCreditOut(BaseModel):
+    provider: Literal["pexels"]
+    photographer: str
+    photographer_url: str | None
+    page_url: str | None
+
+    @classmethod
+    def build(cls, raw: object) -> Self | None:
+        if not isinstance(raw, dict):
+            return None
+        try:
+            return cls.model_validate(raw)
+        except ValueError:
+            return None
+
+
 class RecipeSummary(BaseModel):
     id: int
     name: str
     description: str | None
     photo_url: str | None
     photo_thumb_url: str | None
+    photo_credit: PhotoCreditOut | None
     default_servings: int
     ingredient_count: int
     created_by: int
@@ -113,6 +130,7 @@ class RecipeSummary(BaseModel):
             description=recipe.description,
             photo_url=photo_url(recipe.photo_path),
             photo_thumb_url=thumb_url(recipe.photo_path),
+            photo_credit=PhotoCreditOut.build(recipe.photo_credit) if recipe.photo_path else None,
             default_servings=recipe.default_servings,
             ingredient_count=len(recipe.ingredients),
             created_by=recipe.created_by,

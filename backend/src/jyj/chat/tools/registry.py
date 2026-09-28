@@ -77,6 +77,11 @@ class Tool:
     # Read-only check run before a proposal is stored: rejects missing ids early and returns
     # what the confirmation card should show.
     preview: Handler | None = None
+    # Read-only check deciding per call whether a write needs confirmation, for tools that
+    # only need it sometimes (replacing something that exists).
+    confirm_if: Callable[[ToolContext, Any], bool] | None = None
+    # Read tools whose successful results are also shown to the user as a card.
+    card: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +130,10 @@ class Registry:
             raise ValueError(f"tool {tool.name!r} is already registered")
         if tool.args_model.model_config.get("extra") != "forbid":
             raise ValueError(f"{tool.name}: args model must use extra='forbid'")
-        if tool.requires_confirmation and tool.kind != "write":
+        if (tool.requires_confirmation or tool.confirm_if) and tool.kind != "write":
             raise ValueError(f"{tool.name}: only write tools can require confirmation")
+        if tool.card and tool.kind != "read":
+            raise ValueError(f"{tool.name}: only read tools can be shown as cards")
         schema = strict_schema(tool.args_model)
         check_strict(schema, path=tool.name)
         self._tools[tool.name] = tool
@@ -193,7 +200,11 @@ class Registry:
                 continue
             lines.append(f"{heading}:")
             for tool in tools:
-                flag = " [asks the user to confirm first]" if tool.requires_confirmation else ""
+                flag = ""
+                if tool.requires_confirmation:
+                    flag = " [asks the user to confirm first]"
+                elif tool.confirm_if is not None:
+                    flag = " [sometimes asks the user to confirm first]"
                 args = _signature(self._schemas[tool.name])
                 lines.append(f"- {tool.name}({args}){flag}: {tool.description}")
         return "\n".join(lines)
@@ -220,12 +231,28 @@ class Registry:
         if error is not None:
             return self._audit(ctx, name, stored_args, error, batch_id=batch_id)
 
-        if tool.requires_confirmation or (propose and tool.kind == "write"):
+        if (
+            tool.requires_confirmation
+            or (propose and tool.kind == "write")
+            or self._wants_confirmation(tool, ctx, args)
+        ):
             result = self._run(tool, ctx, args, tool.preview, ToolStatus.NEEDS_CONFIRMATION)
             return self._audit(ctx, name, stored_args, result, batch_id=batch_id)
 
         result = self._run(tool, ctx, args, tool.handler, ToolStatus.SUCCESS)
         return self._audit(ctx, name, stored_args, result, executed=True, batch_id=batch_id)
+
+    def _wants_confirmation(self, tool: Tool, ctx: ToolContext, args: BaseModel) -> bool:
+        if tool.confirm_if is None:
+            return False
+        savepoint = ctx.db.begin_nested()
+        try:
+            return bool(tool.confirm_if(ctx, args))
+        except ServiceError:
+            # The handler reports the problem itself when the call runs.
+            return False
+        finally:
+            savepoint.rollback()
 
     def confirm(self, ctx: ToolContext, action_id: int) -> ToolResult:
         """Run a proposed action as ``ctx.user``, who must have requested it or own its

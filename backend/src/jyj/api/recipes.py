@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from jyj.api.auth import CurrentUser
 from jyj.db import get_db
 from jyj.models import StockSource
+from jyj.schemas.images import PhotoFromSearchIn
 from jyj.schemas.recipes import (
     RecipeCreate,
     RecipeOut,
@@ -16,7 +17,7 @@ from jyj.schemas.recipes import (
     ScaledRecipeOut,
     Servings,
 )
-from jyj.services import photos
+from jyj.services import image_search, photos
 from jyj.services import recipes as service
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -101,6 +102,16 @@ def put_photo(
     service.get_recipe(db, recipe_id)
     data = photos.read_capped(file.file, photos.max_bytes())
     return RecipeOut.build(photos.set_recipe_photo(db, recipe_id, data))
+
+
+@router.post("/{recipe_id}/photo/from-search", response_model=RecipeOut)
+def put_photo_from_search(
+    recipe_id: int, body: PhotoFromSearchIn, user: CurrentUser, db: Db
+) -> RecipeOut:
+    recipe = image_search.set_recipe_photo_from_search(
+        db, user.id, recipe_id, body.provider, body.photo_id
+    )
+    return RecipeOut.build(recipe)
 
 
 @router.delete("/{recipe_id}/photo", response_model=RecipeOut)

@@ -22,6 +22,8 @@ const LABELS: Record<string, ToolLabel> = {
   create_recipe: { done: 'Created recipe', proposed: 'Create recipe' },
   update_recipe: { done: 'Updated recipe', proposed: 'Update recipe' },
   delete_recipe: { done: 'Deleted recipe', proposed: 'Delete recipe' },
+  find_recipe_photos: { done: 'Found photos', proposed: 'Find photos' },
+  set_recipe_photo: { done: 'Set recipe photo', proposed: 'Replace recipe photo' },
   plan_meal: { done: 'Planned meal', proposed: 'Plan meal' },
   move_meal: { done: 'Moved meal', proposed: 'Move meal' },
   set_servings: { done: 'Changed servings', proposed: 'Change servings' },
@@ -59,6 +61,7 @@ function areasFor(tool: string): Area[] | null {
   if (tool.endsWith('_stock')) return ['stock', 'ingredients', 'shopping']
   if (tool.endsWith('_ingredient')) return ['ingredients', 'stock']
   if (tool.endsWith('_recipe')) return ['recipes', 'calendar', 'shopping']
+  if (tool === 'set_recipe_photo') return ['recipes', 'calendar']
   if (MEAL_TOOLS.has(tool)) return ['calendar', 'shopping']
   if (COOK_TOOLS.has(tool)) return ['calendar', 'stock', 'ingredients', 'shopping']
   if (tool === 'create_shopping_list') return ['shopping']
@@ -105,6 +108,12 @@ function mealDate(data: ChatAction['data']) {
 
 /** What the card is about when the backend summary has no name, e.g. "Pasta · Fri 2 Oct · dinner". */
 export function actionSubject(action: ChatAction): string | null {
+  if (action.tool === 'find_recipe_photos') {
+    const recipe = action.data?.recipe_name
+    const query = action.data?.query
+    if (typeof recipe === 'string' && recipe) return `For ${recipe}`
+    return typeof query === 'string' && query ? `“${query}”` : null
+  }
   const subject = summarySubject(action)
   if (subject || !(MEAL_TOOLS.has(action.tool) || COOK_TOOLS.has(action.tool))) return subject
   const meal = mealOf(action.data)
@@ -123,6 +132,10 @@ export interface ActionLink {
 export function actionLink(action: ChatAction): ActionLink | null {
   if (action.status !== 'executed') return null
   const { tool, data } = action
+  if (tool === 'set_recipe_photo') {
+    const id = numberField(data, 'recipe_id')
+    return id === null ? null : { to: `/recipes/${id}`, label: 'Open recipe' }
+  }
   if (tool.endsWith('_recipe')) {
     const id = numberField(data, 'id', 'recipe_id')
     if (tool === 'delete_recipe' && data?.outcome !== 'archived') return null

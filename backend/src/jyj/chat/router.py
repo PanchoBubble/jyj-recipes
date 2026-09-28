@@ -28,7 +28,7 @@ from jyj.chat.tools import Registry, ToolStatus, build_registry
 from jyj.chat.voice import Stt, stt_health
 from jyj.config import get_settings
 from jyj.db import get_db, get_sessionmaker
-from jyj.models import ChatAction, ChatConversation, User
+from jyj.models import ChatAction, ChatActionStatus, ChatConversation, User
 from jyj.schemas.chat import (
     ActionOut,
     BatchActionOut,
@@ -99,7 +99,9 @@ def get_conversation(
     shown = [
         action_out(a)
         for a in conversations.actions(db, conversation.id)
-        if (tool := registry.get(a.tool)) is None or tool.kind == "write"
+        if (tool := registry.get(a.tool)) is None
+        or tool.kind == "write"
+        or (tool.card and a.status is ChatActionStatus.EXECUTED)
     ]
     return ConversationDetail.model_validate(
         {
@@ -122,9 +124,10 @@ def post_message(
 ) -> StreamingResponse:
     """Run one turn and stream it as Server-Sent Events.
 
-    Events: ``status`` (thinking / running_tool), ``action`` (one per write call, or a
-    single ``tool: "batch"`` card listing them when the turn's writes were proposed as a
-    batch), ``assistant`` (the reply), ``error`` (sanitized) and a final ``done``.
+    Events: ``status`` (thinking / running_tool), ``action`` (one per successful read
+    shown as a card, such as photo search results, then one per write call, or a single
+    ``tool: "batch"`` card listing them when the turn's writes were proposed as a batch),
+    ``assistant`` (the reply), ``error`` (sanitized) and a final ``done``.
     """
     conversations.get_conversation(db, user, conversation_id)
     user_id = user.id

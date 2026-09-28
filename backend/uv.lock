@@ -411,6 +411,7 @@ dependencies = [
     { name = "alembic" },
     { name = "argon2-cffi" },
     { name = "fastapi" },
+    { name = "httpx2" },
     { name = "pillow" },
     { name = "pillow-heif" },
     { name = "psycopg", extra = ["binary"] },
@@ -422,7 +423,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx2" },
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "ruff" },
@@ -433,6 +433,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pillow-heif", specifier = ">=1.8.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
@@ -444,7 +445,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx2", specifier = ">=2.13.1" },
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.16.9" },

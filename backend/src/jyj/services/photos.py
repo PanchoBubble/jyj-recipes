@@ -13,7 +13,7 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import pillow_heif
 from PIL import ExifTags, Image, ImageOps
@@ -231,13 +231,17 @@ def _get_recipe(db: Session, recipe_id: int) -> Recipe:
     return recipe
 
 
-def set_recipe_photo(db: Session, recipe_id: int, data: bytes) -> Recipe:
+def set_recipe_photo(
+    db: Session, recipe_id: int, data: bytes, credit: dict[str, Any] | None = None
+) -> Recipe:
+    """Replace the photo; ``credit`` is the new photo's attribution, None for own uploads."""
     recipe = _get_recipe(db, recipe_id)
     processed = process(data)
     name = store(processed)
     _remove_after_rollback(db, name)
     remove_after_commit(db, recipe.photo_path)
     recipe.photo_path = name
+    recipe.photo_credit = credit
     db.flush()
     db.refresh(recipe)
     return recipe
@@ -247,6 +251,7 @@ def clear_recipe_photo(db: Session, recipe_id: int) -> Recipe:
     recipe = _get_recipe(db, recipe_id)
     remove_after_commit(db, recipe.photo_path)
     recipe.photo_path = None
+    recipe.photo_credit = None
     db.flush()
     db.refresh(recipe)
     return recipe

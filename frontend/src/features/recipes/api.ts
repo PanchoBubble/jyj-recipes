@@ -18,6 +18,13 @@ export const SERVINGS_MAX = 100
 export const LINES_MAX = 100
 export const INGREDIENT_NAME_MAX = 100
 
+export interface PhotoCredit {
+  provider: 'pexels'
+  photographer: string
+  photographer_url: string | null
+  page_url: string | null
+}
+
 export interface RecipeSummary {
   id: number
   name: string
@@ -26,6 +33,8 @@ export interface RecipeSummary {
   ingredient_count: number
   photo_url: string | null
   photo_thumb_url: string | null
+  /** Attribution for a photo picked from photo search; null for own uploads. */
+  photo_credit?: PhotoCredit | null
   created_by: number
   created_at: string
   updated_at: string

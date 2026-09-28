@@ -27,7 +27,7 @@
 (security-headers) {
 	header {
 		# 'unsafe-inline' styles: Radix (shadcn) injects <style> tags for scroll locking.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.pexels.com; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		Permissions-Policy "microphone=(self), camera=(self)"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
