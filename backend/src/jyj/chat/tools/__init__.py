@@ -2,6 +2,7 @@
 
 from jyj.chat.tools import calendar, ingredients, recipes, shopping, stock
 from jyj.chat.tools.registry import (
+    DEFAULT_TOOL_TIMEOUT,
     Registry,
     Tool,
     ToolContext,
@@ -11,8 +12,8 @@ from jyj.chat.tools.registry import (
 )
 
 
-def build_registry() -> Registry:
-    registry = Registry()
+def build_registry(tool_timeout_seconds: float | None = DEFAULT_TOOL_TIMEOUT) -> Registry:
+    registry = Registry(tool_timeout_seconds=tool_timeout_seconds)
     registry.register_all(
         (*recipes.TOOLS, *ingredients.TOOLS, *stock.TOOLS, *calendar.TOOLS, *shopping.TOOLS)
     )

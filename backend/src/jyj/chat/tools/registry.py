@@ -7,8 +7,9 @@ leaves a chat_actions row. Tools flagged ``requires_confirmation`` only record a
 ``confirm`` runs it later, once.
 
 Results are plain JSON for the model. Service errors become ``rejected`` with their
-user-facing message; anything else becomes a generic ``error`` so stack traces, SQL and
-driver messages never reach the prompt.
+user-facing message; a call that runs past the Postgres statement_timeout becomes
+``timeout``; anything else becomes a generic ``error`` so stack traces, SQL and driver
+messages never reach the prompt.
 """
 
 import json
@@ -20,7 +21,8 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from jyj.chat.tools.schema import check_strict, strict_schema
@@ -31,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME_MAX = 64
 MAX_ERROR_DETAILS = 10
+DEFAULT_TOOL_TIMEOUT = 3.0
+QUERY_CANCELED = "57014"
 
 
 class ToolStatus(StrEnum):
@@ -38,6 +42,7 @@ class ToolStatus(StrEnum):
     REJECTED = "rejected"
     ERROR = "error"
     NEEDS_CONFIRMATION = "needs_confirmation"
+    TIMEOUT = "timeout"
 
 
 _AUDIT_STATUS = {
@@ -45,6 +50,7 @@ _AUDIT_STATUS = {
     ToolStatus.REJECTED: ChatActionStatus.REJECTED,
     ToolStatus.ERROR: ChatActionStatus.FAILED,
     ToolStatus.NEEDS_CONFIRMATION: ChatActionStatus.PROPOSED,
+    ToolStatus.TIMEOUT: ChatActionStatus.TIMEOUT,
 }
 
 
@@ -106,6 +112,8 @@ class ToolRejected(Exception):
 
 @dataclass
 class Registry:
+    # None leaves the session's statement_timeout alone.
+    tool_timeout_seconds: float | None = DEFAULT_TOOL_TIMEOUT
     _tools: dict[str, Tool] = field(default_factory=dict)
     _schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -276,9 +284,25 @@ class Registry:
         read_only = tool.kind == "read" or ok_status is ToolStatus.NEEDS_CONFIRMATION
         savepoint = ctx.db.begin_nested()
         try:
+            restore = self._limit_statements(ctx.db)
             payload = json.loads(json.dumps(handler(ctx, args), allow_nan=False))
             if not isinstance(payload, dict):
                 raise TypeError("tool handlers must return an object")
+            restore()
+        except DBAPIError as exc:
+            savepoint.rollback()
+            if getattr(exc.orig, "sqlstate", None) != QUERY_CANCELED:
+                logger.exception("chat tool %s failed", tool.name)
+                return _internal_error(tool.name)
+            logger.warning("chat tool %s hit its statement timeout", tool.name)
+            return ToolResult(
+                tool.name,
+                ToolStatus.TIMEOUT,
+                error={
+                    "code": "timeout",
+                    "message": "the tool took too long; try a narrower request",
+                },
+            )
         except ToolRejected as exc:
             savepoint.rollback()
             return _rejected(tool.name, exc.code, exc.message)
@@ -288,16 +312,27 @@ class Registry:
         except Exception:
             savepoint.rollback()
             logger.exception("chat tool %s failed", tool.name)
-            return ToolResult(
-                tool.name,
-                ToolStatus.ERROR,
-                error={"code": "internal_error", "message": "the tool failed unexpectedly"},
-            )
+            return _internal_error(tool.name)
         if read_only:
             savepoint.rollback()
         else:
             savepoint.commit()
         return ToolResult(tool.name, ok_status, data=payload)
+
+    def _limit_statements(self, db: Session) -> Callable[[], None]:
+        """SET LOCAL statement_timeout for this call; the returned callable puts it back.
+
+        A rolled-back savepoint undoes the SET by itself; a released one would keep it for
+        the rest of the transaction, so successful calls restore the previous value.
+        """
+        if self.tool_timeout_seconds is None:
+            return lambda: None
+        previous = db.scalar(text("SELECT current_setting('statement_timeout')"))
+        limit = f"{max(1, round(self.tool_timeout_seconds * 1000))}ms"
+        db.execute(text("SELECT set_config('statement_timeout', :limit, true)"), {"limit": limit})
+        return lambda: db.execute(
+            text("SELECT set_config('statement_timeout', :previous, true)"), {"previous": previous}
+        )
 
     def _audit(
         self,
@@ -352,6 +387,14 @@ def _validate(tool: Tool, raw_args: Any) -> tuple[BaseModel | None, ToolResult |
                 "details": details,
             },
         )
+
+
+def _internal_error(tool: str) -> ToolResult:
+    return ToolResult(
+        tool,
+        ToolStatus.ERROR,
+        error={"code": "internal_error", "message": "the tool failed unexpectedly"},
+    )
 
 
 def _rejected(

@@ -51,7 +51,7 @@ def get_codex_provider() -> CodexProvider:
 
 @lru_cache
 def get_chat_registry() -> Registry:
-    return build_registry()
+    return build_registry(get_settings().chat_tool_timeout_seconds)
 
 
 def get_chat_session_factory() -> Callable[[], Session]:

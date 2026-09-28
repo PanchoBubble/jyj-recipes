@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from jyj.chat.tools import Registry, Tool, ToolContext, ToolStatus, build_registry
@@ -815,3 +815,115 @@ def test_tool_modules_only_reach_data_through_services(module: str) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Name):
             assert node.id not in {"open", "eval", "exec", "__import__"}, node.id
+
+
+# --- statement timeout -----------------------------------------------------------------------
+
+
+def slow_registry(kind: str = "read", timeout: float | None = 0.1) -> Registry:
+    """A test-only tool that writes a row, then sleeps for ``count`` milliseconds in Postgres."""
+
+    def handler(ctx: ToolContext, args: SpyArgs) -> dict:
+        if kind == "write":
+            ingredient(ctx, args.label or "Slow")
+        ctx.db.execute(text("SELECT pg_sleep(:s)"), {"s": args.count / 1000})
+        return {"slept": args.count}
+
+    registry = Registry(tool_timeout_seconds=timeout)
+    registry.register(
+        Tool(name="slow", description="test", args_model=SpyArgs, kind=kind, handler=handler)
+    )
+    return registry
+
+
+def statement_timeout(db: Session) -> str:
+    return db.scalar(text("SELECT current_setting('statement_timeout')"))
+
+
+@pytest.mark.parametrize("kind", ["read", "write"])
+def test_slow_tools_time_out_with_a_sanitised_result(ctx: ToolContext, kind: str) -> None:
+    before = statement_timeout(ctx.db)
+
+    result = slow_registry(kind).execute("slow", {"count": 2000, "label": "Saffron"}, ctx)
+
+    assert result.status is ToolStatus.TIMEOUT
+    assert result.error == {
+        "code": "timeout",
+        "message": "the tool took too long; try a narrower request",
+    }
+    assert result.as_dict()["status"] == "timeout"
+    [row] = audit_rows(ctx.db)
+    assert row.status is ChatActionStatus.TIMEOUT
+    assert row.result == {"error": result.error}
+    assert "pg_sleep" not in json.dumps(row.result)
+    assert ctx.db.scalars(select(Ingredient).where(Ingredient.name == "Saffron")).all() == []
+    assert statement_timeout(ctx.db) == before
+
+
+def test_fast_writes_commit_and_restore_the_session_timeout(ctx: ToolContext) -> None:
+    before = statement_timeout(ctx.db)
+
+    result = slow_registry("write", timeout=2).execute("slow", {"count": 1, "label": "Mace"}, ctx)
+
+    assert result.ok
+    assert statement_timeout(ctx.db) == before
+    assert ctx.db.scalars(select(Ingredient).where(Ingredient.name == "Mace")).one()
+    ctx.db.execute(text("SELECT pg_sleep(0.3)"))
+
+
+def test_the_timeout_applies_inside_the_call_only(ctx: ToolContext) -> None:
+    registry = slow_registry("read", timeout=0.1)
+
+    assert registry.execute("slow", {"count": 1}, ctx).ok
+    ctx.db.execute(text("SELECT pg_sleep(0.3)"))
+    assert registry.execute("slow", {"count": 1000}, ctx).status is ToolStatus.TIMEOUT
+    ctx.db.execute(text("SELECT pg_sleep(0.3)"))
+
+
+def test_timeouts_can_be_turned_off(ctx: ToolContext) -> None:
+    assert slow_registry("read", timeout=None).execute("slow", {"count": 300}, ctx).ok
+
+
+def test_confirmed_actions_time_out_too(ctx: ToolContext) -> None:
+    def handler(c: ToolContext, args: SpyArgs) -> dict:
+        c.db.execute(text("SELECT pg_sleep(1)"))
+        return {}
+
+    registry = Registry(tool_timeout_seconds=0.1)
+    registry.register(
+        Tool(
+            name="slow_delete",
+            description="test",
+            args_model=SpyArgs,
+            kind="write",
+            handler=handler,
+            requires_confirmation=True,
+        )
+    )
+    proposed = registry.execute("slow_delete", {"count": 1}, ctx)
+
+    result = registry.confirm(ctx, proposed.action_id)
+
+    assert result.status is ToolStatus.TIMEOUT
+    assert ctx.db.get(ChatAction, proposed.action_id).status is ChatActionStatus.TIMEOUT
+
+
+def test_other_database_errors_stay_generic(ctx: ToolContext) -> None:
+    def handler(c: ToolContext, args: SpyArgs) -> dict:
+        c.db.execute(text("SELECT 1 / 0"))
+        return {}
+
+    result = spy_registry(handler).execute("spy", {"count": 1}, ctx)
+
+    assert result.status is ToolStatus.ERROR
+    assert result.error["code"] == "internal_error"
+
+
+def test_registry_timeout_comes_from_settings() -> None:
+    from jyj.chat.router import get_chat_registry
+
+    get_chat_registry.cache_clear()
+    try:
+        assert get_chat_registry().tool_timeout_seconds == 3.0
+    finally:
+        get_chat_registry.cache_clear()

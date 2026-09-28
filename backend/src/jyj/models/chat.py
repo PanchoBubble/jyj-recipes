@@ -14,6 +14,7 @@ class ChatActionStatus(StrEnum):
     EXECUTED = "executed"
     REJECTED = "rejected"
     FAILED = "failed"
+    TIMEOUT = "timeout"
 
 
 chat_action_status_enum = Enum(

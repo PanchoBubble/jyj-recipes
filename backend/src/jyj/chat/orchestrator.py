@@ -326,6 +326,7 @@ _CARD_STATUS = {
     ToolStatus.NEEDS_CONFIRMATION: ChatActionStatus.PROPOSED,
     ToolStatus.REJECTED: ChatActionStatus.REJECTED,
     ToolStatus.ERROR: ChatActionStatus.FAILED,
+    ToolStatus.TIMEOUT: ChatActionStatus.TIMEOUT,
 }
 
 
